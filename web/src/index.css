@@ -1,0 +1,86 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-canvas text-ink antialiased;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center gap-1.5 rounded-md border border-line bg-panel px-3 py-1.5
+           text-sm font-medium text-ink transition-colors hover:bg-canvas
+           disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply border-accent bg-accent text-white hover:bg-accent/90;
+  }
+
+  .input {
+    @apply w-full rounded-md border border-line bg-panel px-3 py-1.5 text-sm
+           outline-none focus:border-accent focus:ring-1 focus:ring-accent;
+  }
+
+  .label {
+    @apply mb-1 block text-xs font-medium uppercase tracking-wide text-muted;
+  }
+
+  .card {
+    @apply rounded-lg border border-line bg-panel;
+  }
+}
+
+/*
+ * The note editor. Notes are read for hours at a time, so this is set at a
+ * comfortable measure with generous leading rather than dense UI spacing.
+ */
+.note-block .ProseMirror {
+  @apply min-h-[1.75rem] leading-relaxed outline-none;
+}
+
+.note-block .ProseMirror p {
+  @apply my-1;
+}
+
+.note-block .ProseMirror ul {
+  @apply my-1 list-disc space-y-1 pl-5;
+}
+
+.note-block .ProseMirror ol {
+  @apply my-1 list-decimal space-y-1 pl-5;
+}
+
+.note-block .ProseMirror h1 {
+  @apply mb-1 mt-2 text-xl font-semibold;
+}
+
+.note-block .ProseMirror h2 {
+  @apply mb-1 mt-2 text-lg font-semibold;
+}
+
+.note-block .ProseMirror h3 {
+  @apply mb-1 mt-2 text-base font-semibold;
+}
+
+.note-block .ProseMirror code {
+  @apply rounded bg-canvas px-1 py-0.5 font-mono text-[0.85em];
+}
+
+.note-block .ProseMirror blockquote {
+  @apply border-l-2 border-line pl-3 italic text-muted;
+}
+
+/* Placeholder text for an empty block. */
+.note-block .ProseMirror p.is-editor-empty:first-child::before {
+  @apply pointer-events-none float-left h-0 text-muted;
+  content: attr(data-placeholder);
+}

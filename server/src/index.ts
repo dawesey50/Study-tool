@@ -26,6 +26,23 @@ export async function buildServer() {
     },
   });
 
+  // Several endpoints take no body at all. Fastify's default JSON parser
+  // rejects an empty body outright when the content-type says JSON, which
+  // turns a harmless POST into a confusing 400, so treat empty as {}.
+  app.addContentTypeParser(
+    'application/json',
+    { parseAs: 'string' },
+    (_request, body: string | Buffer, done) => {
+      const text = body.toString().trim();
+      if (!text) return done(null, {});
+      try {
+        done(null, JSON.parse(text));
+      } catch (error) {
+        done(error as Error, undefined);
+      }
+    },
+  );
+
   // Single user on localhost, so CORS only needs to admit the Vite dev server.
   await app.register(cors, { origin: true });
   await app.register(multipart, {
