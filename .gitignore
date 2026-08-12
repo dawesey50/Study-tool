@@ -5,8 +5,8 @@ dist/
 *.log
 
 # Local-first data: the SQLite file and extracted media are yours, not the repo's.
+# The server creates this directory on startup, so nothing needs to be kept here.
 data/
-!data/.gitkeep
 
 # Cached embedding models downloaded at first run
 .models/
