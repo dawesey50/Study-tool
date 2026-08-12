@@ -1,0 +1,323 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { pipeline } from 'node:stream/promises';
+import { and, asc, eq, inArray } from 'drizzle-orm';
+import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
+import { config } from '../config.js';
+import { getDb, schema } from '../db/index.js';
+import { ingestSource } from '../ingest/index.js';
+import { newId } from '../lib/ids.js';
+import { listMappings, proposeSectionsForSource } from '../services/mapping.js';
+import { describeLocation } from '../services/search.js';
+
+const SOURCE_TYPES = ['slides', 'transcript', 'textbook', 'notes', 'past_paper'] as const;
+const ALLOWED_EXTENSIONS = new Set(['.pdf', '.docx', '.txt', '.md', '.vtt', '.srt']);
+
+export async function sourceRoutes(app: FastifyInstance): Promise<void> {
+  const db = getDb();
+
+  app.get('/api/modules/:id/sources', async (request) => {
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+    const sources = db
+      .select()
+      .from(schema.sources)
+      .where(eq(schema.sources.moduleId, id))
+      .orderBy(asc(schema.sources.createdAt))
+      .all();
+
+    return sources.map((source) => ({ ...source, sections: listMappings(source.id) }));
+  });
+
+  /**
+   * Upload a file. Storing it is deliberately separate from parsing it: the
+   * original is on disk and safe before any parser gets a chance to fail.
+   *
+   * All parts are iterated rather than reaching for request.file(), because a
+   * multipart body is a stream and the convenience helper only exposes the
+   * fields that happened to arrive before the file. Iterating means the form
+   * can put title and type on either side of the file and still be read.
+   */
+  app.post('/api/modules/:id/sources', async (request, reply) => {
+    const { id: moduleId } = z.object({ id: z.string() }).parse(request.params);
+    const module = db.select().from(schema.modules).where(eq(schema.modules.id, moduleId)).get();
+    if (!module) return reply.code(404).send({ error: 'Module not found' });
+
+    const sourceId = newId();
+    const fields = new Map<string, string>();
+    let stored: { filename: string; extension: string; relativePath: string } | null = null;
+    let rejection: { code: number; error: string } | null = null;
+
+    for await (const part of request.parts()) {
+      if (part.type === 'field') {
+        fields.set(part.fieldname, String(part.value));
+        continue;
+      }
+
+      // A second file in one request is ignored, but its stream still has to be
+      // drained or the request will not complete.
+      if (stored || rejection) {
+        await part.toBuffer().catch(() => undefined);
+        continue;
+      }
+
+      const extension = path.extname(part.filename).toLowerCase();
+      if (!ALLOWED_EXTENSIONS.has(extension)) {
+        rejection = {
+          code: 400,
+          error: `Unsupported file type "${extension}". Supported: ${[...ALLOWED_EXTENSIONS].join(', ')}`,
+        };
+        await part.toBuffer().catch(() => undefined);
+        continue;
+      }
+
+      const relativePath = path.join('media', 'sources', moduleId, `${sourceId}${extension}`);
+      const absolutePath = path.join(config.dataDir, relativePath);
+      fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+
+      try {
+        await pipeline(part.file, fs.createWriteStream(absolutePath));
+      } catch (error) {
+        fs.rmSync(absolutePath, { force: true });
+        rejection = { code: 500, error: `Could not store upload: ${(error as Error).message}` };
+        continue;
+      }
+
+      if (part.file.truncated) {
+        fs.rmSync(absolutePath, { force: true });
+        rejection = { code: 413, error: 'File exceeds the upload size limit' };
+        continue;
+      }
+
+      stored = { filename: part.filename, extension, relativePath };
+    }
+
+    if (rejection) return reply.code(rejection.code).send({ error: rejection.error });
+    if (!stored) return reply.code(400).send({ error: 'Expected a multipart file upload' });
+
+    const rawType = fields.get('type');
+    const type = (SOURCE_TYPES as readonly string[]).includes(rawType ?? '')
+      ? (rawType as schema.SourceType)
+      : inferType(stored.extension);
+
+    db.insert(schema.sources)
+      .values({
+        id: sourceId,
+        moduleId,
+        type,
+        title: fields.get('title')?.trim() || path.basename(stored.filename, stored.extension),
+        filename: stored.filename,
+        path: stored.relativePath,
+        lectureDate: fields.get('lectureDate')?.trim() || null,
+        status: 'uploaded',
+      })
+      .run();
+
+    reply.code(201);
+    return db.select().from(schema.sources).where(eq(schema.sources.id, sourceId)).get();
+  });
+
+  app.get('/api/sources/:id', async (request, reply) => {
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+    const source = db.select().from(schema.sources).where(eq(schema.sources.id, id)).get();
+    if (!source) return reply.code(404).send({ error: 'Source not found' });
+
+    const figures = db
+      .select()
+      .from(schema.figures)
+      .where(eq(schema.figures.sourceId, id))
+      .orderBy(asc(schema.figures.pageNo))
+      .all();
+
+    return {
+      ...source,
+      sections: listMappings(id),
+      figures: figures.map(publicFigure),
+      chunkCount: db
+        .select()
+        .from(schema.chunks)
+        .where(eq(schema.chunks.sourceId, id))
+        .all().length,
+    };
+  });
+
+  app.patch('/api/sources/:id', async (request, reply) => {
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+    const body = z
+      .object({
+        title: z.string().min(1).optional(),
+        type: z.enum(SOURCE_TYPES).optional(),
+        lectureDate: z.string().nullable().optional(),
+      })
+      .parse(request.body);
+
+    const source = db.select().from(schema.sources).where(eq(schema.sources.id, id)).get();
+    if (!source) return reply.code(404).send({ error: 'Source not found' });
+
+    db.update(schema.sources).set(body).where(eq(schema.sources.id, id)).run();
+    return db.select().from(schema.sources).where(eq(schema.sources.id, id)).get();
+  });
+
+  /** Parse, chunk, embed and map. Safe to re-run; it replaces rather than appends. */
+  app.post('/api/sources/:id/ingest', async (request, reply) => {
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+    const source = db.select().from(schema.sources).where(eq(schema.sources.id, id)).get();
+    if (!source) return reply.code(404).send({ error: 'Source not found' });
+
+    try {
+      return await ingestSource(id);
+    } catch (error) {
+      return reply.code(422).send({ error: (error as Error).message });
+    }
+  });
+
+  app.get('/api/sources/:id/chunks', async (request) => {
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+    const rows = db
+      .select({
+        id: schema.chunks.id,
+        text: schema.chunks.text,
+        pageNo: schema.chunks.pageNo,
+        slideNo: schema.chunks.slideNo,
+        timestamp: schema.chunks.timestamp,
+        position: schema.chunks.position,
+        hasEmbedding: schema.chunks.embedding,
+        sourceTitle: schema.sources.title,
+        sourceType: schema.sources.type,
+      })
+      .from(schema.chunks)
+      .innerJoin(schema.sources, eq(schema.sources.id, schema.chunks.sourceId))
+      .where(eq(schema.chunks.sourceId, id))
+      .orderBy(asc(schema.chunks.position))
+      .all();
+
+    return rows.map((row) => ({
+      id: row.id,
+      text: row.text,
+      pageNo: row.pageNo,
+      slideNo: row.slideNo,
+      timestamp: row.timestamp,
+      position: row.position,
+      embedded: row.hasEmbedding !== null,
+      location: describeLocation(row),
+    }));
+  });
+
+  /** Re-run section matching without re-parsing the file. */
+  app.post('/api/sources/:id/propose-sections', async (request, reply) => {
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+    const source = db.select().from(schema.sources).where(eq(schema.sources.id, id)).get();
+    if (!source) return reply.code(404).send({ error: 'Source not found' });
+    return proposeSectionsForSource(id);
+  });
+
+  /** Confirm or correct which sections a source belongs to. */
+  app.put('/api/sources/:id/sections', async (request, reply) => {
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+    const body = z.object({ sectionIds: z.array(z.string()) }).parse(request.body);
+
+    const source = db.select().from(schema.sources).where(eq(schema.sources.id, id)).get();
+    if (!source) return reply.code(404).send({ error: 'Source not found' });
+
+    const valid = body.sectionIds.length
+      ? db
+          .select({ id: schema.sections.id })
+          .from(schema.sections)
+          .where(
+            and(
+              eq(schema.sections.moduleId, source.moduleId),
+              inArray(schema.sections.id, body.sectionIds),
+            ),
+          )
+          .all()
+          .map((row) => row.id)
+      : [];
+
+    const existing = db
+      .select()
+      .from(schema.sourceSections)
+      .where(eq(schema.sourceSections.sourceId, id))
+      .all();
+    const previous = new Map(existing.map((row) => [row.sectionId, row]));
+
+    db.transaction((tx) => {
+      tx.delete(schema.sourceSections).where(eq(schema.sourceSections.sourceId, id)).run();
+      for (const sectionId of valid) {
+        tx.insert(schema.sourceSections)
+          .values({
+            sourceId: id,
+            sectionId,
+            // Keep the chunk range the matcher worked out, if it had one.
+            chunkRange: previous.get(sectionId)?.chunkRange ?? null,
+            score: previous.get(sectionId)?.score ?? null,
+            confirmed: true,
+          })
+          .run();
+      }
+    });
+
+    return listMappings(id);
+  });
+
+  app.delete('/api/sources/:id', async (request, reply) => {
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+    const source = db.select().from(schema.sources).where(eq(schema.sources.id, id)).get();
+    if (!source) return reply.code(204).send();
+
+    // Chunks and figures cascade in SQL; the files they point at do not.
+    db.delete(schema.sources).where(eq(schema.sources.id, id)).run();
+    fs.rmSync(path.join(config.dataDir, source.path), { force: true });
+    fs.rmSync(path.join(config.mediaDir, 'figures', id), { recursive: true, force: true });
+
+    return reply.code(204).send();
+  });
+
+  // --- Figures --------------------------------------------------------------
+
+  app.get('/api/sections/:id/figures', async (request) => {
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+
+    // Figures reachable from a section are those in the sources mapped to it.
+    const sourceIds = db
+      .select({ sourceId: schema.sourceSections.sourceId })
+      .from(schema.sourceSections)
+      .where(eq(schema.sourceSections.sectionId, id))
+      .all()
+      .map((row) => row.sourceId);
+
+    if (sourceIds.length === 0) return [];
+
+    return db
+      .select()
+      .from(schema.figures)
+      .where(inArray(schema.figures.sourceId, sourceIds))
+      .orderBy(asc(schema.figures.pageNo))
+      .all()
+      .map(publicFigure);
+  });
+}
+
+/** Never leak the embedding blob or an absolute filesystem path to the client. */
+function publicFigure(figure: typeof schema.figures.$inferSelect) {
+  return {
+    id: figure.id,
+    sourceId: figure.sourceId,
+    url: `/media/${figure.path.split(path.sep).join('/').replace(/^media\//, '')}`,
+    pageNo: figure.pageNo,
+    width: figure.width,
+    height: figure.height,
+    captionExtracted: figure.captionExtracted,
+    captionAi: figure.captionAi,
+    altText: figure.altText,
+    type: figure.type,
+  };
+}
+
+function inferType(extension: string): schema.SourceType {
+  if (extension === '.vtt' || extension === '.srt') return 'transcript';
+  if (extension === '.txt' || extension === '.md') return 'notes';
+  return 'slides';
+}
+
+/** Exported for the upload form so both sides agree on what is accepted. */
+export const acceptedExtensions = [...ALLOWED_EXTENSIONS];

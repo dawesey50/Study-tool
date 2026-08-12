@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+
+# Local-first data: the SQLite file and extracted media are yours, not the repo's.
+data/
+!data/.gitkeep
+
+# Cached embedding models downloaded at first run
+.models/
+
+.DS_Store
+.vite/
+coverage/
