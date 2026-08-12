@@ -16,6 +16,9 @@
     "start": "npm run start --workspace server",
     "typecheck": "npm run typecheck --workspace server && npm run typecheck --workspace web",
     "test": "npm run test --workspace server",
+    "test:e2e": "node e2e/smoke.mjs",
+    "seed": "node scripts/seed.mjs",
+    "check": "npm run typecheck && npm test",
     "db:generate": "npm run db:generate --workspace server"
   },
   "devDependencies": {

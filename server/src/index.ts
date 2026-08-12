@@ -13,17 +13,28 @@ import { noteRoutes } from './routes/notes.js';
 import { searchRoutes } from './routes/search.js';
 import { sourceRoutes } from './routes/sources.js';
 
-export async function buildServer() {
+export interface BuildOptions {
+  /** Tests pass false to keep output clean and avoid a pretty-print worker. */
+  logger?: boolean;
+}
+
+export async function buildServer(options: BuildOptions = {}) {
   initDb();
 
   const app = Fastify({
-    logger: {
-      level: process.env.LOG_LEVEL ?? 'info',
-      transport:
-        process.env.NODE_ENV === 'production'
-          ? undefined
-          : { target: 'pino-pretty', options: { translateTime: 'HH:MM:ss', ignore: 'pid,hostname' } },
-    },
+    logger:
+      options.logger === false
+        ? false
+        : {
+            level: process.env.LOG_LEVEL ?? 'info',
+            transport:
+              process.env.NODE_ENV === 'production'
+                ? undefined
+                : {
+                    target: 'pino-pretty',
+                    options: { translateTime: 'HH:MM:ss', ignore: 'pid,hostname' },
+                  },
+          },
   });
 
   // Several endpoints take no body at all. Fastify's default JSON parser
@@ -42,6 +53,19 @@ export async function buildServer() {
       }
     },
   );
+
+  // This must be set before the routes are registered. Each register() call
+  // creates an encapsulated child context that captures the error handler in
+  // force at the time, so a handler installed afterwards never reaches them —
+  // and every validation error comes back as a 500 with a raw Zod dump.
+  app.setErrorHandler((error: unknown, request, reply) => {
+    if (error instanceof ZodError) {
+      return reply.code(400).send({ error: 'Invalid request', details: error.issues });
+    }
+    request.log.error(error);
+    const { statusCode, message } = error as { statusCode?: number; message?: string };
+    return reply.code(statusCode ?? 500).send({ error: message || 'Internal server error' });
+  });
 
   // Single user on localhost, so CORS only needs to admit the Vite dev server.
   await app.register(cors, { origin: true });
@@ -78,15 +102,6 @@ export async function buildServer() {
       return reply.type('text/html').send(fs.readFileSync(path.join(webDist, 'index.html')));
     });
   }
-
-  app.setErrorHandler((error: unknown, request, reply) => {
-    if (error instanceof ZodError) {
-      return reply.code(400).send({ error: 'Invalid request', details: error.issues });
-    }
-    request.log.error(error);
-    const { statusCode, message } = error as { statusCode?: number; message?: string };
-    return reply.code(statusCode ?? 500).send({ error: message || 'Internal server error' });
-  });
 
   return app;
 }

@@ -104,13 +104,20 @@ cosine in JS, which is fast enough for one person's material.
 ## Development
 
 ```bash
-npm test           # server test suite
-npm run typecheck  # both workspaces
+npm run check        # typecheck both workspaces, then run the test suites
+npm test             # unit + API tests on their own
+npm run test:e2e     # browser journey (needs a running server and Playwright)
+npm run seed         # fill a running server with a demo module to click around
 npm run db:generate  # regenerate migrations after editing the Drizzle schema
 ```
 
 Migrations are generated from `server/src/db/schema.ts` and applied
 automatically at startup, so there is no separate migrate step.
+
+[TESTING.md](TESTING.md) explains the four testing layers, and — importantly —
+what you still need to check by hand the first time the real embedding model
+downloads, since the suites run against an offline provider with no semantic
+understanding.
 
 ## Backing up
 

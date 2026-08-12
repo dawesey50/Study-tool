@@ -1,0 +1,245 @@
+/**
+ * End-to-end smoke test: drives a real browser against a running server and
+ * walks the whole Phase 1 journey.
+ *
+ *   npm run build && npm start     # in one terminal
+ *   npm run test:e2e               # in another
+ *
+ * This is deliberately a single flowing journey rather than isolated cases.
+ * The unit and API suites cover behaviour in detail; what this checks is that
+ * the pieces are actually wired together in the browser — which is where the
+ * bugs that matter tend to hide.
+ *
+ * Playwright is not a dependency of the project, since most work does not need
+ * it. Install it when you want to run this:  npm install -D playwright
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(here, '..');
+const PDF = path.join(repoRoot, 'server/test/fixtures/lecture-07-action-potentials.pdf');
+
+const BASE = process.env.E2E_BASE_URL ?? 'http://127.0.0.1:5174';
+const HEADED = process.env.E2E_HEADED === '1';
+const SHOTS = process.env.E2E_SCREENSHOT_DIR;
+
+let chromium;
+try {
+  ({ chromium } = await import('playwright'));
+} catch {
+  console.error(
+    'Playwright is not installed.\n\n' +
+      '  npm install -D playwright && npx playwright install chromium\n\n' +
+      'Then run this again. The unit and API suites (npm test) need nothing extra.',
+  );
+  process.exit(1);
+}
+
+try {
+  const health = await fetch(`${BASE}/api/health`).then((r) => r.json());
+  if (!health.ok) throw new Error('unhealthy');
+} catch {
+  console.error(
+    `No server responding at ${BASE}.\n\n` +
+      '  npm run build && npm start\n\n' +
+      'then run this again.',
+  );
+  process.exit(1);
+}
+
+const failures = [];
+const consoleErrors = [];
+
+const browser = await chromium.launch({
+  headless: !HEADED,
+  ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}),
+});
+const page = await browser.newPage({ viewport: { width: 1400, height: 950 } });
+page.on('console', (message) => {
+  if (message.type() === 'error') consoleErrors.push(message.text());
+});
+page.on('pageerror', (error) => consoleErrors.push(`uncaught: ${error.message}`));
+
+async function step(name, fn) {
+  process.stdout.write(`  ${name} … `);
+  try {
+    await fn();
+    console.log('ok');
+  } catch (error) {
+    console.log('FAILED');
+    failures.push({ name, error: error.message.split('\n')[0] });
+    if (SHOTS) {
+      fs.mkdirSync(SHOTS, { recursive: true });
+      await page.screenshot({ path: path.join(SHOTS, `fail-${slug(name)}.png`) });
+    }
+  }
+}
+
+const slug = (text) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+// A distinct name per run keeps repeated runs from colliding in the sidebar.
+const moduleName = `E2E Neuroscience ${Date.now().toString().slice(-6)}`;
+
+console.log(`\nRunning the Phase 1 journey against ${BASE}\n`);
+
+await step('the app loads', async () => {
+  await page.goto(BASE, { waitUntil: 'networkidle' });
+  await page.getByRole('heading', { name: 'Modules' }).waitFor();
+});
+
+await step('a module can be created', async () => {
+  await page.getByPlaceholder('PA20345').fill('PA20345');
+  await page.getByPlaceholder('Neuroscience').fill(moduleName);
+  await page.getByRole('button', { name: 'Add module' }).click();
+  await page.getByRole('link', { name: new RegExp(moduleName) }).waitFor();
+});
+
+await step('a pasted outline becomes a numbered hierarchy', async () => {
+  await page.getByRole('link', { name: new RegExp(moduleName) }).click();
+  await page.getByRole('button', { name: 'Paste an outline' }).click();
+  await page.locator('#outline').fill(
+    [
+      'The Brain',
+      '  Gross anatomy and organisation',
+      '  The cerebral cortex',
+      '    Cortical layers',
+      '    Functional areas',
+      'Neurotransmission',
+      '  Resting membrane potential',
+      '  Action potential propagation',
+    ].join('\n'),
+  );
+  await page.getByRole('button', { name: 'Replace hierarchy' }).click();
+
+  const sidebar = page.locator('aside');
+  for (const number of ['1.0', '1.1', '1.2', '1.2.1', '1.2.2', '2.0', '2.1', '2.2']) {
+    await sidebar.getByText(number, { exact: true }).first().waitFor({ timeout: 8000 });
+  }
+});
+
+await step('slides upload and ingest', async () => {
+  await page.getByRole('link', { name: 'Sources' }).first().click();
+  await page.getByRole('heading', { name: 'Sources' }).waitFor();
+  await page.locator('#source-title').fill('L07 Action Potentials');
+  await page.locator('input[type=file]').setInputFiles(PDF);
+  // The ingest summary only renders once the pipeline has finished.
+  await page.getByText(/\d+ chunks · \d+ figures/).waitFor({ timeout: 90_000 });
+});
+
+await step('the deck can be mapped to sections by hand', async () => {
+  await page.getByRole('button', { name: 'Edit' }).first().click();
+  for (const title of ['Resting membrane potential', 'Action potential propagation']) {
+    await page.locator('label', { hasText: title }).locator('input').check();
+  }
+  await page.getByRole('button', { name: 'Confirm mapping' }).click();
+  await page.getByText('2.2 Action potential propagation').first().waitFor({ timeout: 10_000 });
+});
+
+await step('a section shows its chunks with slide citations', async () => {
+  await page.locator('aside').getByText('Action potential propagation').click();
+  await page.getByRole('button', { name: /^Sources/ }).click();
+  await page.getByRole('button', { name: 'Show extract' }).first().click();
+  await page.getByText(/slide \d/).first().waitFor({ timeout: 10_000 });
+});
+
+await step('extracted figures render, not just link', async () => {
+  await page.getByText(/Figures from this section/).waitFor({ timeout: 10_000 });
+  const image = page.locator('figure img').first();
+  await image.waitFor();
+  const loaded = await image.evaluate((el) => el.naturalWidth > 0);
+  if (!loaded) throw new Error('figure image did not load');
+});
+
+await step('a note can be written and survives a reload', async () => {
+  await page.getByRole('button', { name: 'Notes' }).click();
+  await page.getByRole('button', { name: 'Start writing' }).click();
+  const editor = page.locator('.note-block .ProseMirror').first();
+  await editor.click();
+  await editor.type('Myelination increases conduction velocity via saltatory conduction.');
+  await page.waitForTimeout(1200); // let the debounced save land
+
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.getByText(/Myelination increases conduction velocity/).waitFor({ timeout: 10_000 });
+});
+
+await step('locking a block makes it read-only', async () => {
+  await page.getByText(/Myelination increases conduction velocity/).click();
+  await page.getByRole('button', { name: 'Lock' }).first().click();
+  await page.getByText('🔒 locked').first().waitFor({ timeout: 10_000 });
+  const editable = await page
+    .locator('.note-block .ProseMirror')
+    .first()
+    .evaluate((el) => el.getAttribute('contenteditable'));
+  if (editable !== 'false') throw new Error(`expected contenteditable=false, got ${editable}`);
+});
+
+await step('search finds the note and the slide behind it', async () => {
+  await page.getByPlaceholder(/Search everything/).fill('saltatory');
+  await page.waitForTimeout(900);
+  const results = page.locator('aside button', { hasText: /saltatory/i });
+  if ((await results.count()) === 0) throw new Error('no search results');
+});
+
+await step('dragging a section renumbers the tree', async () => {
+  await page.keyboard.press('Escape');
+  const before = await sidebarNumbers(page);
+
+  // Native HTML5 drag is not produced by synthetic mouse movement, so the
+  // drag events are dispatched directly at the same handlers a real drag hits.
+  await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('aside [draggable="true"]')];
+    const find = (text) => rows.find((row) => row.textContent.includes(text));
+    const source = find('Neurotransmission');
+    const target = find('The Brain');
+    const dataTransfer = new DataTransfer();
+    source.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer }));
+    const box = target.getBoundingClientRect();
+    const init = {
+      bubbles: true,
+      dataTransfer,
+      clientX: box.left + 10,
+      clientY: box.top + box.height * 0.1,
+    };
+    target.dispatchEvent(new DragEvent('dragover', init));
+    target.dispatchEvent(new DragEvent('drop', init));
+  });
+
+  await page.waitForTimeout(1500);
+  const after = await sidebarNumbers(page);
+
+  if (!after[0]?.includes('Neurotransmission') || !after[0]?.startsWith('1.0')) {
+    throw new Error(`expected Neurotransmission at 1.0, got "${after[0]}" (was "${before[0]}")`);
+  }
+  // Its children must have come with it.
+  if (!after[1]?.startsWith('1.1')) throw new Error('children did not follow the moved parent');
+});
+
+if (SHOTS) {
+  fs.mkdirSync(SHOTS, { recursive: true });
+  await page.screenshot({ path: path.join(SHOTS, 'final.png'), fullPage: true });
+}
+
+await browser.close();
+
+const unique = [...new Set(consoleErrors)];
+if (unique.length) {
+  console.log('\nBrowser console errors:');
+  for (const error of unique) console.log(`  ${error}`);
+}
+
+if (failures.length || unique.length) {
+  console.log(`\n${failures.length} step(s) failed:`);
+  for (const failure of failures) console.log(`  ${failure.name}: ${failure.error}`);
+  if (SHOTS) console.log(`\nScreenshots in ${SHOTS}`);
+  process.exit(1);
+}
+
+console.log('\nAll steps passed, no console errors.\n');
+
+function sidebarNumbers(page) {
+  return page
+    .locator('aside a[href*="/sections/"]')
+    .evaluateAll((els) => els.map((el) => el.textContent.trim().replace(/\s+/g, ' ')));
+}
