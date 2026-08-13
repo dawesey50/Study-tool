@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  check:
+    # Windows is here deliberately, not for completeness. A path bug that was
+    # invisible on Linux stopped the server from starting at all on Windows,
+    # and every test still passed. Anything that touches paths, process
+    # arguments or file URLs needs both to be meaningful.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit and API tests
+        run: npm test
+
+      - name: Build
+        run: npm run build

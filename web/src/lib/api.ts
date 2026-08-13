@@ -148,6 +148,10 @@ export interface Health {
   dataDir: string;
 }
 
+const BACKEND_UNREACHABLE =
+  'Cannot reach the Processor server. Check the terminal running `npm run dev` — ' +
+  'the server half should say "Server listening at http://127.0.0.1:5174".';
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -164,12 +168,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // which silently breaks every bodyless POST such as ingest.
   const isJsonBody = init?.body !== undefined && !(init.body instanceof FormData);
 
-  const response = await fetch(path, {
-    ...init,
-    headers: isJsonBody
-      ? { 'content-type': 'application/json', ...init?.headers }
-      : init?.headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      ...init,
+      headers: isJsonBody
+        ? { 'content-type': 'application/json', ...init?.headers }
+        : init?.headers,
+    });
+  } catch {
+    // fetch only rejects when the request never got a response at all.
+    throw new ApiError(BACKEND_UNREACHABLE, 0);
+  }
 
   if (!response.ok) {
     // Surface the server's own message where there is one; it is written for
@@ -179,7 +189,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       const body = (await response.json()) as { error?: string };
       if (body.error) message = body.error;
     } catch {
-      // Non-JSON error body; the status text will do.
+      // A non-JSON error body from an /api path means nothing on the other end
+      // parsed the request — in dev that is the Vite proxy reporting that it
+      // could not reach Fastify. Saying so beats "Internal Server Error",
+      // which sends you looking for a bug in the wrong process.
+      if (response.status >= 500) message = BACKEND_UNREACHABLE;
     }
     throw new ApiError(message, response.status);
   }

@@ -8,6 +8,7 @@ import { config } from '../config.js';
 import { getDb, schema } from '../db/index.js';
 import { ingestSource } from '../ingest/index.js';
 import { newId } from '../lib/ids.js';
+import { fromStoredPath, storedPath, toMediaUrl } from '../lib/paths.js';
 import { listMappings, proposeSectionsForSource } from '../services/mapping.js';
 import { describeLocation } from '../services/search.js';
 
@@ -71,8 +72,8 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
         continue;
       }
 
-      const relativePath = path.join('media', 'sources', moduleId, `${sourceId}${extension}`);
-      const absolutePath = path.join(config.dataDir, relativePath);
+      const relativePath = storedPath('media', 'sources', moduleId, `${sourceId}${extension}`);
+      const absolutePath = fromStoredPath(relativePath);
       fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
 
       try {
@@ -266,7 +267,7 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
 
     // Chunks and figures cascade in SQL; the files they point at do not.
     db.delete(schema.sources).where(eq(schema.sources.id, id)).run();
-    fs.rmSync(path.join(config.dataDir, source.path), { force: true });
+    fs.rmSync(fromStoredPath(source.path), { force: true });
     fs.rmSync(path.join(config.mediaDir, 'figures', id), { recursive: true, force: true });
 
     return reply.code(204).send();
@@ -302,7 +303,7 @@ function publicFigure(figure: typeof schema.figures.$inferSelect) {
   return {
     id: figure.id,
     sourceId: figure.sourceId,
-    url: `/media/${figure.path.split(path.sep).join('/').replace(/^media\//, '')}`,
+    url: toMediaUrl(figure.path),
     pageNo: figure.pageNo,
     width: figure.width,
     height: figure.height,

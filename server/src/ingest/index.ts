@@ -7,6 +7,7 @@ import { indexVector } from '../db/vectorIndex.js';
 import { embedSafely } from '../embeddings/index.js';
 import { newId, slugify } from '../lib/ids.js';
 import { toBlob } from '../lib/vector.js';
+import { fromStoredPath, toStoredPath } from '../lib/paths.js';
 import { proposeSectionsForSource } from '../services/mapping.js';
 import { chunkBlocks } from './chunk.js';
 import { parseDocx } from './docx.js';
@@ -42,7 +43,7 @@ export async function ingestSource(sourceId: string): Promise<IngestResult> {
     .run();
 
   try {
-    const absolutePath = path.join(config.dataDir, source.path);
+    const absolutePath = fromStoredPath(source.path);
     if (!fs.existsSync(absolutePath)) {
       throw new Error(`Stored file is missing at ${source.path}`);
     }
@@ -93,7 +94,7 @@ export async function ingestSource(sourceId: string): Promise<IngestResult> {
           .values({
             id: figureIds[i]!,
             sourceId,
-            path: path.relative(config.dataDir, figure.absolutePath),
+            path: toStoredPath(figure.absolutePath),
             pageNo: figure.pageNo ?? null,
             width: figure.width || null,
             height: figure.height || null,

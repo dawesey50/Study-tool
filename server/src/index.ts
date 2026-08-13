@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
@@ -128,7 +129,12 @@ async function main(): Promise<void> {
 }
 
 // Only start a server when run directly; tests import buildServer instead.
-if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
+//
+// pathToFileURL is doing real work here. A Windows argv[1] looks like
+// C:\path\index.ts, so string-concatenating "file://" onto it yields
+// file://C:\path\index.ts, which never equals Node's file:///C:/path/index.ts
+// — the module would load and then quietly exit without ever listening.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((error) => {
     console.error(error);
     process.exit(1);
