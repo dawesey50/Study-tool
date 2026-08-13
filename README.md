@@ -27,22 +27,38 @@ behaviour rather than reshaping data.
 | 4 — FSRS scheduling at concept level, mastery rollup | Not started |
 | 5 — Past papers, timed exams, concept map | Not started |
 
-## Running it
+## Using it
+
+**Double-click `Processor.bat`** (Windows) or **`Processor.command`** (Mac).
+
+That is the whole thing. It installs anything missing, rebuilds if the code
+changed, starts the server and opens your browser. After the first run it takes
+a couple of seconds. Leave the window open while you work; close it to shut
+down.
+
+Make a desktop shortcut to it once (right-click → *Send to* → *Desktop* on
+Windows) and you never touch a terminal again.
+
+If something goes wrong:
+
+```bash
+npm run doctor
+```
+
+It checks Node, dependencies, the database driver, ports and permissions, then
+actually starts the server to capture the real error, and tells you what to do
+about each one.
+
+### Working on the code
 
 ```bash
 npm install
-npm run dev
+npm run dev        # http://localhost:5173, with hot reload
 ```
 
-Then open <http://localhost:5173>. That runs the Fastify API on port 5174 and
-the Vite dev server on 5173, which proxies to it.
-
-For a single process serving both:
-
-```bash
-npm run build
-npm start          # http://localhost:5174
-```
+That runs the API on port 5174 and Vite on 5173 with a proxy between them, so
+edits appear immediately. `npm run app` is the launcher without the
+double-click.
 
 Copy `.env.example` to `.env` if you want to change anything. Every setting has
 a working default, so this is optional.
