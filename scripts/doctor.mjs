@@ -216,12 +216,26 @@ const SERVER_PORT = Number(process.env.PORT) || 5174;
 // run it for real on a scratch database and see what it says.
 
 {
-  const entry = fs.existsSync(path.join(root, 'server/dist/index.js'))
+  const built = fs.existsSync(path.join(root, 'server/dist/index.js'));
+  const entry = built
     ? { args: [path.join(root, 'server/dist/index.js')], label: 'built server' }
     : { args: ['--import', 'tsx', path.join(root, 'server/src/index.ts')], label: 'source server' };
 
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'processor-doctor-'));
   const probePort = 5100 + Math.floor(Math.random() * 800);
+  const TIMEOUT_MS = 180_000;
+
+  // This check can take a while, so it narrates. A silent wait is impossible to
+  // tell apart from a hang, and the difference matters: on Windows a cold start
+  // from TypeScript source with an antivirus scanning node_modules can take a
+  // genuinely long time without anything being wrong.
+  // Progress dots only make sense on a real terminal; when the output is piped
+  // or redirected they would just litter the transcript.
+  const live = Boolean(process.stdout.isTTY);
+  console.log(
+    `[ .... ] Server starts (${entry.label}) — booting, please wait` +
+      (built ? '' : '\n         (compiling TypeScript as it goes; the built server starts faster)'),
+  );
 
   const child = spawn(process.execPath, entry.args, {
     cwd: root,
@@ -237,42 +251,77 @@ const SERVER_PORT = Number(process.env.PORT) || 5174;
   });
 
   let output = '';
-  child.stdout?.on('data', (d) => (output += d.toString()));
-  child.stderr?.on('data', (d) => (output += d.toString()));
+  const collect = (data) => {
+    output += data.toString();
+  };
+  child.stdout?.on('data', collect);
+  child.stderr?.on('data', collect);
 
   let exitCode = null;
+  let spawnError = null;
   child.on('exit', (code) => (exitCode = code ?? 0));
+  child.on('error', (error) => (spawnError = error));
 
-  const deadline = Date.now() + 60_000;
+  const startedAt = Date.now();
+  const deadline = startedAt + TIMEOUT_MS;
   let started = false;
+  let lastDot = 0;
 
-  while (Date.now() < deadline && exitCode === null && !started) {
+  while (Date.now() < deadline && exitCode === null && !spawnError && !started) {
     try {
-      const response = await fetch(`http://127.0.0.1:${probePort}/api/health`);
+      const response = await fetch(`http://127.0.0.1:${probePort}/api/health`, {
+        signal: AbortSignal.timeout(2000),
+      });
       if (response.ok) started = true;
     } catch {
       /* not up yet */
     }
-    if (!started) await new Promise((r) => setTimeout(r, 250));
+    if (!started) {
+      // One dot a second, so the window visibly keeps working.
+      if (live && Date.now() - lastDot >= 1000) {
+        process.stdout.write('.');
+        lastDot = Date.now();
+      }
+      await new Promise((r) => setTimeout(r, 250));
+    }
   }
+
+  const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
+  // Blank the dots with spaces rather than an ANSI erase code, which older
+  // Windows consoles can print literally.
+  if (live) process.stdout.write(`\r${' '.repeat(78)}\r`);
 
   child.kill();
   fs.rmSync(scratch, { recursive: true, force: true });
 
-  if (started) {
-    report(true, `Server starts (${entry.label})`);
+  if (spawnError) {
+    report(false, 'Server could not be launched', spawnError.message);
+  } else if (started) {
+    report(true, `Server starts (${entry.label}) — ready in ${seconds}s`);
+    if (Number(seconds) > 20) {
+      note(
+        `Startup took ${seconds}s, which is slow. If the project sits in a folder your ` +
+          'antivirus scans (or on a slow or network drive), excluding the node_modules ' +
+          'folder usually makes a large difference. Processor.bat runs the built server, ' +
+          'which starts far faster than the source one.',
+      );
+    }
   } else if (exitCode !== null) {
     report(
       false,
-      `Server exited immediately with code ${exitCode}`,
+      `Server exited after ${seconds}s with code ${exitCode}`,
       (output.trim() || '(no output at all)') +
         '\n\nCopy the text above — it names the real problem.',
     );
   } else {
     report(
       false,
-      'Server did not respond within 60 seconds',
-      (output.trim() || '(no output)') + '\n\nCopy the text above.',
+      `Server did not respond within ${TIMEOUT_MS / 1000}s`,
+      (output.trim() || '(the server printed nothing at all)') +
+        '\n\nIt is running but never finished starting. Most often that is a folder ' +
+        'being scanned by antivirus, or a slow or network drive.\n' +
+        'Try excluding the project folder from real-time scanning, or move it to a\n' +
+        'local disk, then run this again.',
     );
   }
 }

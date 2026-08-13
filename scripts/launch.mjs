@@ -92,9 +92,19 @@ async function main() {
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
 
-  const deadline = Date.now() + 90_000;
+  // Narrate the wait. A first start on a cold cache can take a while, and
+  // silence there is indistinguishable from a hang.
+  const live = Boolean(process.stdout.isTTY);
+  let lastDot = 0;
+
+  const deadline = Date.now() + 180_000;
   while (Date.now() < deadline && exited === null) {
+    if (live && Date.now() - lastDot >= 1000) {
+      process.stdout.write('.');
+      lastDot = Date.now();
+    }
     if (await healthy()) {
+      if (live) process.stdout.write(`\r${' '.repeat(78)}\r`);
       openBrowser(URL);
       say(`\n  Processor is open at ${URL}`);
       say('  Your notes live in the data folder next to this project.');
@@ -111,7 +121,7 @@ async function main() {
 
   fail(
     exited === null
-      ? 'The server did not start within 90 seconds.'
+      ? 'The server did not finish starting within three minutes.'
       : `The server stopped straight away (exit code ${exited}).`,
     output,
   );
