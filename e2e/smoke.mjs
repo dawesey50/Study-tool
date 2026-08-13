@@ -86,19 +86,25 @@ console.log(`\nRunning the Phase 1 journey against ${BASE}\n`);
 
 await step('the app loads', async () => {
   await page.goto(BASE, { waitUntil: 'networkidle' });
-  await page.getByRole('heading', { name: 'Modules' }).waitFor();
+  // Scoped to the main column: "Modules" also labels a sidebar region.
+  await page.locator('main').getByRole('heading', { name: 'Modules' }).waitFor();
 });
 
 await step('a module can be created', async () => {
   await page.getByPlaceholder('PA20345').fill('PA20345');
   await page.getByPlaceholder('Neuroscience').fill(moduleName);
   await page.getByRole('button', { name: 'Add module' }).click();
-  await page.getByRole('link', { name: new RegExp(moduleName) }).waitFor();
+  // Creating a module navigates into it and lists it in the sidebar.
+  await page.locator('aside').getByText(moduleName).waitFor();
+});
+
+await step('the sidebar lists modules', async () => {
+  const inSidebar = page.locator('aside').getByText(moduleName);
+  if ((await inSidebar.count()) === 0) throw new Error('module missing from the sidebar');
 });
 
 await step('a pasted outline becomes a numbered hierarchy', async () => {
-  await page.getByRole('link', { name: new RegExp(moduleName) }).click();
-  await page.getByRole('button', { name: 'Paste an outline' }).click();
+  await page.getByRole('button', { name: 'Paste an outline' }).first().click();
   await page.locator('#outline').fill(
     [
       'The Brain',
@@ -120,7 +126,7 @@ await step('a pasted outline becomes a numbered hierarchy', async () => {
 });
 
 await step('slides upload and ingest', async () => {
-  await page.getByRole('link', { name: 'Sources' }).first().click();
+  await page.getByRole('link', { name: /Sources for this module|Add sources/ }).first().click();
   await page.getByRole('heading', { name: 'Sources' }).waitFor();
   await page.locator('#source-title').fill('L07 Action Potentials');
   await page.locator('input[type=file]').setInputFiles(PDF);
@@ -134,7 +140,13 @@ await step('the deck can be mapped to sections by hand', async () => {
     await page.locator('label', { hasText: title }).locator('input').check();
   }
   await page.getByRole('button', { name: 'Confirm mapping' }).click();
-  await page.getByText('2.2 Action potential propagation').first().waitFor({ timeout: 10_000 });
+  const chip = page.locator('main').getByTitle('Confirmed by you');
+  await chip.first().waitFor({ timeout: 10_000 });
+  const labels = await chip.evaluateAll((els) => els.map((e) => e.textContent.trim()));
+  if (labels.length !== 2) throw new Error(`expected 2 confirmed chips, got ${labels.length}`);
+  if (!labels.some((text) => text.includes('Action potential propagation'))) {
+    throw new Error(`missing the expected mapping, got ${JSON.stringify(labels)}`);
+  }
 });
 
 await step('a section shows its chunks with slide citations', async () => {
@@ -166,8 +178,8 @@ await step('a note can be written and survives a reload', async () => {
 
 await step('locking a block makes it read-only', async () => {
   await page.getByText(/Myelination increases conduction velocity/).click();
-  await page.getByRole('button', { name: 'Lock' }).first().click();
-  await page.getByText('🔒 locked').first().waitFor({ timeout: 10_000 });
+  await page.getByRole('button', { name: 'Lock', exact: true }).first().click();
+  await page.getByText('locked', { exact: true }).first().waitFor({ timeout: 10_000 });
   const editable = await page
     .locator('.note-block .ProseMirror')
     .first()

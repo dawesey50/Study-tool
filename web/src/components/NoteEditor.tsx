@@ -4,6 +4,7 @@ import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { useEffect, useRef, useState } from 'react';
 import { api, type NoteBlock, type NoteBlockType } from '../lib/api';
+import { Icon } from './ui/Icon';
 
 /**
  * The note editor.
@@ -53,17 +54,29 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
     onSuccess: invalidate,
   });
 
-  if (isLoading) return <div className="p-4 text-sm text-muted">Loading notes…</div>;
+  if (isLoading) {
+    return (
+      <div className="space-y-2">
+        <div className="skeleton h-7 w-1/3" />
+        <div className="skeleton h-20" />
+      </div>
+    );
+  }
 
   if (!blocks?.length) {
     return (
-      <div className="card p-8 text-center">
-        <p className="text-sm text-muted">
-          No notes here yet. Write them yourself now, or wait for Phase 2 to generate them from
-          this section&rsquo;s sources.
+      <div className="card px-6 py-12 text-center">
+        <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-accent-soft text-accent">
+          <Icon name="notes" size={20} />
+        </span>
+        <h3 className="mt-3 font-medium">Nothing written here yet</h3>
+        <p className="mx-auto mt-1.5 max-w-md text-sm leading-relaxed text-muted">
+          Write notes yourself now — anything you write is marked as yours and will never be
+          overwritten once generation arrives.
         </p>
         <div className="mt-4 flex justify-center gap-2">
           <button className="btn btn-primary" onClick={() => create.mutate({ type: 'heading' })}>
+            <Icon name="plus" size={14} />
             Add a heading
           </button>
           <button className="btn" onClick={() => create.mutate({ type: 'prose' })}>
@@ -90,19 +103,21 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
         />
       ))}
 
-      <div className="flex gap-2 pt-3">
-        <button className="btn" onClick={() => create.mutate({ type: 'prose' })}>
-          + Paragraph
-        </button>
-        <button className="btn" onClick={() => create.mutate({ type: 'heading' })}>
-          + Heading
-        </button>
-        <button className="btn" onClick={() => create.mutate({ type: 'callout' })}>
-          + Extra knowledge
-        </button>
-        <button className="btn" onClick={() => create.mutate({ type: 'summary' })}>
-          + Summary
-        </button>
+      <div className="flex flex-wrap gap-2 border-t border-line pt-4">
+        {(
+          [
+            ['prose', 'Paragraph'],
+            ['heading', 'Heading'],
+            ['list', 'List'],
+            ['callout', 'Extra knowledge'],
+            ['summary', 'Summary'],
+          ] as const
+        ).map(([type, label]) => (
+          <button key={type} className="btn btn-sm" onClick={() => create.mutate({ type })}>
+            <Icon name="plus" size={12} />
+            {label}
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -133,14 +148,15 @@ function BlockRow({
     <div
       onFocusCapture={onSelect}
       onClick={onSelect}
-      className={`group relative rounded-md border px-3 py-2 transition-colors ${
-        selected ? 'border-accent/40 bg-panel' : 'border-transparent hover:border-line'
-      } ${block.type === 'callout' ? 'border-l-4 border-l-flag bg-flag-soft/40' : ''} ${
-        block.type === 'summary' ? 'bg-accent-soft/40' : ''
+      className={`group relative rounded-lg border px-3 py-2 transition ${
+        selected ? 'border-line bg-panel shadow-card' : 'border-transparent hover:bg-panel/60'
+      } ${block.type === 'callout' ? 'border-l-[3px] border-l-flag bg-flag-soft/50' : ''} ${
+        block.type === 'summary' ? 'bg-accent-soft/50' : ''
       }`}
     >
       {(block.type === 'callout' || block.type === 'summary') && (
-        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">
+        <div className="mb-1 flex items-center gap-1 text-2xs font-semibold uppercase tracking-wider text-muted">
+          <Icon name={block.type === 'callout' ? 'sparkle' : 'check'} size={11} />
           {block.type === 'callout' ? 'Extra knowledge — beyond the lecture' : 'Summary'}
         </div>
       )}
@@ -148,19 +164,27 @@ function BlockRow({
       <BlockBody block={block} onChange={onChange} />
 
       <div
-        className={`mt-1 flex items-center gap-2 text-[11px] text-muted ${
-          selected ? '' : 'opacity-0 group-hover:opacity-100'
+        className={`mt-1.5 flex items-center gap-1.5 text-2xs text-muted transition ${
+          selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
         }`}
       >
         <OriginBadge origin={block.origin} />
-        {block.locked && <span title="Regeneration will never touch this block">🔒 locked</span>}
+        {block.locked && (
+          <span
+            className="chip bg-line/60 text-muted"
+            title="Regeneration will never touch this block"
+          >
+            <Icon name="lock" size={10} />
+            locked
+          </span>
+        )}
 
         <span className="flex-1" />
 
         <select
           value={block.type}
           onChange={(event) => onSetType(event.target.value as NoteBlockType)}
-          className="rounded border border-line bg-panel px-1 py-0.5 text-[11px]"
+          className="rounded-md border border-line bg-panel px-1.5 py-0.5 text-2xs"
           aria-label="Block type"
         >
           {(['heading', 'prose', 'list', 'callout', 'summary', 'table', 'diagram'] as const).map(
@@ -172,14 +196,29 @@ function BlockRow({
           )}
         </select>
 
-        <button className="hover:text-ink" onClick={onToggleLock}>
-          {block.locked ? 'Unlock' : 'Lock'}
+        <button
+          className="btn-icon h-6 w-6"
+          onClick={onToggleLock}
+          title={block.locked ? 'Unlock this block' : 'Lock — never regenerate this block'}
+          aria-label={block.locked ? 'Unlock' : 'Lock'}
+        >
+          <Icon name={block.locked ? 'unlock' : 'lock'} size={13} />
         </button>
-        <button className="hover:text-ink" onClick={onInsertAfter}>
-          Insert below
+        <button
+          className="btn-icon h-6 w-6"
+          onClick={onInsertAfter}
+          title="Insert a paragraph below"
+          aria-label="Insert below"
+        >
+          <Icon name="plus" size={13} />
         </button>
-        <button className="hover:text-flag" onClick={onDelete}>
-          Delete
+        <button
+          className="btn-icon h-6 w-6 hover:text-flag"
+          onClick={onDelete}
+          title="Delete this block"
+          aria-label="Delete block"
+        >
+          <Icon name="trash" size={13} />
         </button>
       </div>
     </div>
@@ -243,9 +282,18 @@ function OriginBadge({ origin }: { origin: NoteBlock['origin'] }) {
   const labels: Record<NoteBlock['origin'], string> = {
     ai_generated: 'generated',
     user_written: 'yours',
-    user_edited: 'yours (edited)',
+    user_edited: 'yours · edited',
   };
-  return <span title={`Origin: ${origin}`}>{labels[origin]}</span>;
+  const titles: Record<NoteBlock['origin'], string> = {
+    ai_generated: 'Written by the model, and safe to regenerate',
+    user_written: 'You wrote this. Regeneration will leave it alone.',
+    user_edited: 'You edited this. Regeneration will leave it alone.',
+  };
+  return (
+    <span className="chip bg-line/50" title={titles[origin]}>
+      {labels[origin]}
+    </span>
+  );
 }
 
 const PLACEHOLDERS: Partial<Record<NoteBlockType, string>> = {

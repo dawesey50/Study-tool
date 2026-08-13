@@ -3,11 +3,17 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { RouterProvider, createBrowserRouter, Navigate } from 'react-router-dom';
 import { App } from './App';
+import { initTheme } from './lib/theme';
+import { ConfirmProvider } from './components/ui/Confirm';
+import { ToastProvider } from './components/ui/Toast';
 import { ModulePage } from './pages/ModulePage';
 import { ModulesPage } from './pages/ModulesPage';
 import { SectionPage } from './pages/SectionPage';
 import { SourcesPage } from './pages/SourcesPage';
 import './index.css';
+
+// Before the first paint, so a dark-mode user never sees a white flash.
+initTheme();
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -38,7 +44,11 @@ const router = createBrowserRouter([
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <ToastProvider>
+        <ConfirmProvider>
+          <RouterProvider router={router} />
+        </ConfirmProvider>
+      </ToastProvider>
     </QueryClientProvider>
   </React.StrictMode>,
 );

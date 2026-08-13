@@ -2,6 +2,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api, flattenSections, type IngestResult, type Source, type SourceType } from '../lib/api';
+import { Icon, type IconName } from '../components/ui/Icon';
+import { useConfirm } from '../components/ui/Confirm';
+import { useToast } from '../components/ui/Toast';
 
 const SOURCE_TYPES: Array<{ value: SourceType; label: string }> = [
   { value: 'slides', label: 'Lecture slides' },
@@ -11,14 +14,24 @@ const SOURCE_TYPES: Array<{ value: SourceType; label: string }> = [
   { value: 'past_paper', label: 'Past paper' },
 ];
 
+const TYPE_ICON: Record<SourceType, IconName> = {
+  slides: 'layers',
+  transcript: 'notes',
+  textbook: 'book',
+  notes: 'edit',
+  past_paper: 'question',
+};
+
 const ACCEPT = '.pdf,.docx,.txt,.md,.vtt,.srt';
 
 export function SourcesPage() {
   const { moduleId } = useParams<{ moduleId: string }>();
   const queryClient = useQueryClient();
+  const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [type, setType] = useState<SourceType>('slides');
   const [title, setTitle] = useState('');
+  const [dragging, setDragging] = useState(false);
   const [lastIngest, setLastIngest] = useState<Record<string, IngestResult>>({});
 
   const { data: sources, isLoading } = useQuery({
@@ -30,6 +43,7 @@ export function SourcesPage() {
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['sources', moduleId] });
     queryClient.invalidateQueries({ queryKey: ['module', moduleId] });
+    queryClient.invalidateQueries({ queryKey: ['modules'] });
   };
 
   /**
@@ -53,23 +67,27 @@ export function SourcesPage() {
       if (fileRef.current) fileRef.current.value = '';
       setLastIngest((previous) => ({ ...previous, [source.id]: result }));
       invalidate();
+      toast.success(
+        `Ingested ${source.title}`,
+        `${result.chunks} chunks, ${result.figures} figures, ${result.proposedSections} section${
+          result.proposedSections === 1 ? '' : 's'
+        } proposed.`,
+      );
     },
-  });
-
-  const backfill = useMutation({
-    mutationFn: api.backfillEmbeddings,
-    onSuccess: invalidate,
+    onError: (error: Error) => toast.error('Ingestion failed', error.message),
   });
 
   if (!moduleId) return null;
 
   return (
-    <div className="mx-auto max-w-4xl px-8 py-10">
-      <h1 className="text-2xl font-semibold tracking-tight">Sources</h1>
-      <p className="mt-1 text-sm text-muted">
-        Slides, transcripts, textbook pages and your own notes. Sources belong to the module, not
-        to one section, because a lecture usually spans several.
-      </p>
+    <div className="mx-auto max-w-4xl px-8 py-12">
+      <header>
+        <h1 className="text-2xl font-semibold tracking-tight">Sources</h1>
+        <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted">
+          Slides, transcripts, textbook pages and your own notes. Sources belong to the module
+          rather than one section, because a lecture usually spans several.
+        </p>
+      </header>
 
       <div className="card mt-6 p-4">
         <div className="flex items-end gap-3">
@@ -92,7 +110,7 @@ export function SourcesPage() {
           </div>
           <div className="flex-1">
             <label className="label" htmlFor="source-title">
-              Title <span className="normal-case text-muted">(optional)</span>
+              Title <span className="font-normal normal-case text-faint">optional</span>
             </label>
             <input
               id="source-title"
@@ -104,52 +122,64 @@ export function SourcesPage() {
           </div>
         </div>
 
-        <div className="mt-3">
+        <label
+          onDragOver={(event) => {
+            event.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(event) => {
+            event.preventDefault();
+            setDragging(false);
+            const file = event.dataTransfer.files?.[0];
+            if (file) upload.mutate(file);
+          }}
+          className={`mt-3 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-4 py-8 text-center transition ${
+            dragging ? 'border-accent bg-accent-soft' : 'border-line hover:border-accent/50 hover:bg-canvas'
+          } ${upload.isPending ? 'pointer-events-none opacity-60' : ''}`}
+        >
           <input
             ref={fileRef}
             type="file"
             accept={ACCEPT}
-            className="block w-full text-sm file:mr-3 file:rounded-md file:border file:border-line
-                       file:bg-panel file:px-3 file:py-1.5 file:text-sm file:font-medium
-                       hover:file:bg-canvas"
+            className="sr-only"
             onChange={(event) => {
               const file = event.target.files?.[0];
               if (file) upload.mutate(file);
             }}
             disabled={upload.isPending}
           />
-          <p className="mt-1.5 text-xs text-muted">
-            Accepted: {ACCEPT.replace(/\./g, '').replace(/,/g, ', ')}. Uploading starts ingestion
-            straight away.
-          </p>
-        </div>
-
-        {upload.isPending && (
-          <p className="mt-3 text-sm text-muted">Uploading and ingesting…</p>
-        )}
-        {upload.error && <p className="mt-3 text-sm text-flag">{(upload.error as Error).message}</p>}
+          <Icon name="upload" size={22} className={dragging ? 'text-accent' : 'text-faint'} />
+          <span className="mt-2 text-sm font-medium">
+            {upload.isPending ? 'Uploading and ingesting…' : 'Drop a file here, or click to choose'}
+          </span>
+          <span className="mt-1 text-xs text-muted">
+            {ACCEPT.replace(/\./g, '').replace(/,/g, ', ')} · ingestion starts straight away
+          </span>
+        </label>
       </div>
-
-      <div className="mt-4 flex items-center gap-3">
-        <button className="btn" onClick={() => backfill.mutate()} disabled={backfill.isPending}>
-          Backfill missing embeddings
-        </button>
-        <span className="text-xs text-muted">
-          Run this if material was ingested while the embedding model was unreachable.
-        </span>
-      </div>
-      {backfill.data && (
-        <p className="mt-2 text-sm text-muted">
-          Embedded {backfill.data.chunks.embedded} of {backfill.data.chunks.pending} chunks and{' '}
-          {backfill.data.noteBlocks.embedded} of {backfill.data.noteBlocks.pending} note blocks.
-        </p>
-      )}
 
       <div className="mt-8 space-y-3">
-        {isLoading && <p className="text-sm text-muted">Loading…</p>}
-        {sources?.length === 0 && (
-          <p className="text-sm text-muted">Nothing ingested yet.</p>
+        {isLoading && (
+          <>
+            <div className="skeleton h-28" />
+            <div className="skeleton h-28" />
+          </>
         )}
+
+        {sources?.length === 0 && (
+          <div className="card px-6 py-12 text-center">
+            <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-accent-soft text-accent">
+              <Icon name="file" size={20} />
+            </span>
+            <h2 className="mt-3 font-medium">Nothing ingested yet</h2>
+            <p className="mx-auto mt-1 max-w-sm text-sm leading-relaxed text-muted">
+              Add a lecture deck or transcript above. Text keeps its slide number or timestamp,
+              and figures are pulled out of the PDF automatically.
+            </p>
+          </div>
+        )}
+
         {sources?.map((source) => (
           <SourceCard
             key={source.id}
@@ -173,6 +203,8 @@ function SourceCard({
   ingest: IngestResult | undefined;
 }) {
   const queryClient = useQueryClient();
+  const toast = useToast();
+  const confirm = useConfirm();
   const [editingMapping, setEditingMapping] = useState(false);
 
   const { data: sections } = useQuery({
@@ -182,15 +214,45 @@ function SourceCard({
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['sources', moduleId] });
 
-  const reingest = useMutation({ mutationFn: () => api.ingestSource(source.id), onSuccess: invalidate });
-  const remove = useMutation({ mutationFn: () => api.deleteSource(source.id), onSuccess: invalidate });
+  const reingest = useMutation({
+    mutationFn: () => api.ingestSource(source.id),
+    onSuccess: (result) => {
+      invalidate();
+      toast.success(`Re-ingested ${source.title}`, `${result.chunks} chunks, ${result.figures} figures.`);
+    },
+    onError: (error: Error) => toast.error('Re-ingestion failed', error.message),
+  });
+
+  const remove = useMutation({
+    mutationFn: () => api.deleteSource(source.id),
+    onSuccess: () => {
+      invalidate();
+      toast.success('Source deleted');
+    },
+    onError: (error: Error) => toast.error('Could not delete the source', error.message),
+  });
+
   const setSections = useMutation({
     mutationFn: (sectionIds: string[]) => api.setSourceSections(source.id, sectionIds),
-    onSuccess: () => {
+    onSuccess: (mappings) => {
       setEditingMapping(false);
       invalidate();
+      toast.success(`Mapped to ${mappings.length} section${mappings.length === 1 ? '' : 's'}`);
     },
+    onError: (error: Error) => toast.error('Could not save the mapping', error.message),
   });
+
+  const askThenDelete = async () => {
+    const confirmed = await confirm({
+      title: `Delete ${source.title}?`,
+      message:
+        'The stored file, its extracted text and every figure pulled out of it will be removed. ' +
+        'Notes you have written are not affected.',
+      confirmLabel: 'Delete source',
+      tone: 'danger',
+    });
+    if (confirmed) remove.mutate();
+  };
 
   const flat = sections ? flattenSections(sections) : [];
   const mapped = new Set(source.sections.map((entry) => entry.sectionId));
@@ -198,46 +260,65 @@ function SourceCard({
   return (
     <div className="card p-4">
       <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="font-medium">{source.title}</div>
-          <div className="mt-0.5 text-xs text-muted">
-            {source.type.replace('_', ' ')} · {source.filename}
-            {source.pageCount ? ` · ${source.pageCount} pages` : ''}
+        <div className="flex min-w-0 gap-3">
+          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-canvas text-muted">
+            <Icon name={TYPE_ICON[source.type]} size={17} />
+          </span>
+          <div className="min-w-0">
+            <div className="font-medium">{source.title}</div>
+            <div className="mt-0.5 truncate text-xs text-muted">
+              {source.type.replace('_', ' ')} · {source.filename}
+              {source.pageCount ? ` · ${source.pageCount} pages` : ''}
+            </div>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+
+        <div className="flex shrink-0 items-center gap-1.5">
           <StatusPill status={source.status} />
-          <button className="btn" onClick={() => reingest.mutate()} disabled={reingest.isPending}>
-            Re-ingest
+          <button
+            className="btn-icon"
+            onClick={() => reingest.mutate()}
+            disabled={reingest.isPending}
+            title="Re-ingest — parse the file again"
+            aria-label="Re-ingest"
+          >
+            <Icon name="refresh" size={15} className={reingest.isPending ? 'animate-spin' : ''} />
           </button>
-          <button className="btn" onClick={() => remove.mutate()}>
-            Delete
+          <button
+            className="btn-icon hover:text-flag"
+            onClick={askThenDelete}
+            title="Delete source"
+            aria-label="Delete source"
+          >
+            <Icon name="trash" size={15} />
           </button>
         </div>
       </div>
 
       {source.error && (
-        <p className="mt-2 rounded border border-flag/30 bg-flag-soft px-2 py-1 text-sm text-flag">
+        <p className="mt-3 rounded-lg border border-flag/30 bg-flag-soft px-3 py-2 text-sm text-flag">
           {source.error}
         </p>
       )}
 
       {ingest && (
-        <p className="mt-2 text-xs text-muted">
+        <p className="mt-3 text-xs text-muted">
           {ingest.chunks} chunks · {ingest.figures} figures ·{' '}
           {ingest.embedded ? 'embedded' : 'stored without vectors'} · {ingest.proposedSections}{' '}
           section{ingest.proposedSections === 1 ? '' : 's'} proposed
           {ingest.warnings.length > 0 && (
-            <span className="mt-1 block text-flag">{ingest.warnings.join(' ')}</span>
+            <span className="mt-1 block text-warn">{ingest.warnings.join(' ')}</span>
           )}
         </p>
       )}
 
-      <div className="mt-3">
+      <div className="mt-3 border-t border-line pt-3">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-medium uppercase tracking-wide text-muted">Sections</span>
+          <span className="text-2xs font-semibold uppercase tracking-wider text-muted">
+            Sections
+          </span>
           <button
-            className="text-xs text-accent hover:underline"
+            className="text-xs font-medium text-accent transition hover:underline"
             onClick={() => setEditingMapping((previous) => !previous)}
           >
             {editingMapping ? 'Cancel' : 'Edit'}
@@ -247,14 +328,12 @@ function SourceCard({
         {!editingMapping ? (
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {source.sections.length === 0 && (
-              <span className="text-sm text-muted">
-                Not mapped to any section yet.
-              </span>
+              <span className="text-sm text-muted">Not mapped to any section yet.</span>
             )}
             {source.sections.map((mapping) => (
               <span
                 key={mapping.sectionId}
-                className={`rounded-full px-2 py-0.5 text-xs ${
+                className={`chip ${
                   mapping.confirmed
                     ? 'bg-accent-soft text-accent'
                     : 'border border-dashed border-line text-muted'
@@ -262,11 +341,12 @@ function SourceCard({
                 title={
                   mapping.confirmed
                     ? 'Confirmed by you'
-                    : `Proposed from embedding match (${mapping.score.toFixed(2)})`
+                    : `Proposed from an embedding match (${mapping.score.toFixed(2)})`
                 }
               >
-                {mapping.sectionNumber} {mapping.sectionTitle}
-                {!mapping.confirmed && ' ?'}
+                <span className="font-mono">{mapping.sectionNumber}</span>
+                {mapping.sectionTitle}
+                {!mapping.confirmed && <Icon name="question" size={11} />}
               </span>
             ))}
           </div>
@@ -306,28 +386,26 @@ function MappingEditor({
 
   return (
     <div className="mt-2">
-      <div className="max-h-64 overflow-y-auto rounded border border-line">
+      <div className="max-h-64 overflow-y-auto rounded-lg border border-line">
         {sections.map((section) => (
           <label
             key={section.id}
-            className="flex cursor-pointer items-center gap-2 border-b border-line px-2 py-1 text-sm last:border-b-0 hover:bg-canvas"
-            style={{ paddingLeft: `${8 + (section.depth - 1) * 14}px` }}
+            className="flex cursor-pointer items-center gap-2 border-b border-line px-2 py-1.5 text-sm transition last:border-b-0 hover:bg-canvas"
+            style={{ paddingLeft: `${8 + (section.depth - 1) * 16}px` }}
           >
             <input
               type="checkbox"
               checked={chosen.has(section.id)}
               onChange={() => toggle(section.id)}
+              className="accent-accent"
             />
-            <span className="font-mono text-xs text-muted">{section.number}</span>
+            <span className="font-mono text-2xs tabular-nums text-faint">{section.number}</span>
             <span className="truncate">{section.title}</span>
           </label>
         ))}
       </div>
-      <button
-        className="btn btn-primary mt-2"
-        onClick={() => onSave([...chosen])}
-        disabled={saving}
-      >
+      <button className="btn btn-primary mt-2" onClick={() => onSave([...chosen])} disabled={saving}>
+        <Icon name="check" size={14} />
         Confirm mapping
       </button>
     </div>
@@ -336,12 +414,10 @@ function MappingEditor({
 
 function StatusPill({ status }: { status: Source['status'] }) {
   const styles: Record<Source['status'], string> = {
-    uploaded: 'bg-canvas text-muted',
-    ingesting: 'bg-amber-100 text-amber-800',
+    uploaded: 'bg-line/60 text-muted',
+    ingesting: 'bg-warn-soft text-warn',
     ingested: 'bg-accent-soft text-accent',
     failed: 'bg-flag-soft text-flag',
   };
-  return (
-    <span className={`rounded-full px-2 py-0.5 text-xs ${styles[status]}`}>{status}</span>
-  );
+  return <span className={`chip ${styles[status]}`}>{status}</span>;
 }

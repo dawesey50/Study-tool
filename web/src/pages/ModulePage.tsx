@@ -2,6 +2,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api, flattenSections } from '../lib/api';
+import { Icon } from '../components/ui/Icon';
+import { Modal } from '../components/ui/Modal';
+import { useConfirm } from '../components/ui/Confirm';
+import { useToast } from '../components/ui/Toast';
 
 /**
  * Module overview, and the place to type a hierarchy out by hand.
@@ -13,10 +17,12 @@ import { api, flattenSections } from '../lib/api';
 export function ModulePage() {
   const { moduleId } = useParams<{ moduleId: string }>();
   const queryClient = useQueryClient();
+  const toast = useToast();
+  const confirm = useConfirm();
   const [outline, setOutline] = useState('');
-  const [showOutline, setShowOutline] = useState(false);
+  const [outlineOpen, setOutlineOpen] = useState(false);
 
-  const { data: module } = useQuery({
+  const { data: module, isLoading } = useQuery({
     queryKey: ['module', moduleId],
     queryFn: () => api.getModule(moduleId!),
     enabled: Boolean(moduleId),
@@ -30,104 +36,164 @@ export function ModulePage() {
 
   const applyOutline = useMutation({
     mutationFn: () => api.replaceTree(moduleId!, parseOutline(outline)),
-    onSuccess: () => {
+    onSuccess: (tree) => {
       setOutline('');
-      setShowOutline(false);
+      setOutlineOpen(false);
       queryClient.invalidateQueries({ queryKey: ['sections', moduleId] });
       queryClient.invalidateQueries({ queryKey: ['module', moduleId] });
+      queryClient.invalidateQueries({ queryKey: ['modules'] });
+      toast.success(`Hierarchy saved — ${flattenSections(tree).length} sections`);
     },
+    onError: (error: Error) => toast.error('Could not save the hierarchy', error.message),
   });
 
-  if (!module) return <div className="p-8 text-sm text-muted">Loading…</div>;
+  const submitOutline = async () => {
+    const existing = module ? flattenSections(module.sections).length : 0;
+    if (existing > 0) {
+      const confirmed = await confirm({
+        title: 'Replace the whole hierarchy?',
+        message:
+          `This module has ${existing} section${existing === 1 ? '' : 's'}. Any not present in ` +
+          'your outline will be deleted, along with the notes inside them.',
+        confirmLabel: 'Replace hierarchy',
+        tone: 'danger',
+      });
+      if (!confirmed) return;
+    }
+    applyOutline.mutate();
+  };
+
+  if (isLoading || !module) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-3 px-8 py-12">
+        <div className="skeleton h-8 w-1/2" />
+        <div className="skeleton h-24" />
+      </div>
+    );
+  }
 
   const sections = flattenSections(module.sections);
   const ingested = sources?.filter((source) => source.status === 'ingested').length ?? 0;
 
   return (
-    <div className="mx-auto max-w-3xl px-8 py-10">
-      <h1 className="text-2xl font-semibold tracking-tight">
-        {module.code && <span className="mr-2 font-mono text-lg text-muted">{module.code}</span>}
-        {module.title}
-      </h1>
-
-      <div className="mt-6 grid grid-cols-3 gap-3">
-        <Stat label="Sections" value={sections.length} />
-        <Stat label="Sources" value={sources?.length ?? 0} />
-        <Stat label="Ingested" value={ingested} />
-      </div>
-
-      <div className="mt-8 flex gap-2">
-        <Link className="btn" to={`/modules/${moduleId}/sources`}>
+    <div className="mx-auto max-w-3xl px-8 py-12">
+      <header className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold tracking-tight">{module.title}</h1>
+          <p className="mt-1 text-sm text-muted">
+            {module.code && <span className="font-mono">{module.code}</span>}
+            {module.code && module.year ? ' · ' : ''}
+            {module.year ? `Year ${module.year}` : ''}
+          </p>
+        </div>
+        <Link className="btn btn-primary shrink-0" to={`/modules/${moduleId}/sources`}>
+          <Icon name="upload" size={15} />
           Add sources
         </Link>
-        <button className="btn" onClick={() => setShowOutline((previous) => !previous)}>
-          {showOutline ? 'Cancel' : 'Paste an outline'}
-        </button>
+      </header>
+
+      <div className="mt-6 grid grid-cols-3 gap-3">
+        <Stat icon="layers" label="Sections" value={sections.length} />
+        <Stat icon="file" label="Sources" value={sources?.length ?? 0} />
+        <Stat icon="check" label="Ingested" value={ingested} />
       </div>
 
-      {showOutline && (
-        <div className="card mt-4 p-4">
-          <label className="label" htmlFor="outline">
-            Section outline
-          </label>
-          <p className="mb-2 text-xs text-muted">
-            One section per line. Indent with two spaces or a tab to nest. Any leading numbering
-            is ignored, because numbers are derived from position rather than stored.
-          </p>
-          <textarea
-            id="outline"
-            className="input h-56 font-mono text-xs"
-            value={outline}
-            onChange={(event) => setOutline(event.target.value)}
-            placeholder={EXAMPLE_OUTLINE}
-          />
-          <div className="mt-3 flex items-center gap-3">
+      <section className="mt-10">
+        <div className="flex items-center justify-between gap-4">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">Hierarchy</h2>
+          <button className="btn btn-sm" onClick={() => setOutlineOpen(true)}>
+            <Icon name="edit" size={13} />
+            Paste an outline
+          </button>
+        </div>
+
+        {sections.length === 0 ? (
+          <div className="card mt-3 px-6 py-10 text-center">
+            <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-accent-soft text-accent">
+              <Icon name="layers" size={20} />
+            </span>
+            <h3 className="mt-3 font-medium">No sections yet</h3>
+            <p className="mx-auto mt-1 max-w-sm text-sm leading-relaxed text-muted">
+              Sections are the organising unit — a place in the syllabus, rather than one
+              lecture. Paste your module handbook outline to build the tree in one go.
+            </p>
+            <button className="btn btn-primary mt-4" onClick={() => setOutlineOpen(true)}>
+              Paste an outline
+            </button>
+          </div>
+        ) : (
+          <ul className="mt-3 overflow-hidden rounded-xl border border-line bg-panel">
+            {sections.map((section) => (
+              <li key={section.id} className="border-b border-line last:border-b-0">
+                <Link
+                  to={`/modules/${moduleId}/sections/${section.id}`}
+                  className="flex items-baseline gap-3 px-3 py-2 transition hover:bg-canvas"
+                  style={{ paddingLeft: `${12 + (section.depth - 1) * 18}px` }}
+                >
+                  <span className="shrink-0 font-mono text-xs tabular-nums text-faint">
+                    {section.number}
+                  </span>
+                  <span className="truncate text-sm">{section.title}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <Modal
+        open={outlineOpen}
+        onClose={() => setOutlineOpen(false)}
+        title="Paste a section outline"
+        description="One section per line. Indent with two spaces or a tab to nest."
+        width="max-w-2xl"
+        footer={
+          <>
+            <button className="btn" onClick={() => setOutlineOpen(false)}>
+              Cancel
+            </button>
             <button
               className="btn btn-primary"
               disabled={!outline.trim() || applyOutline.isPending}
-              onClick={() => applyOutline.mutate()}
+              onClick={submitOutline}
             >
-              Replace hierarchy
+              {applyOutline.isPending ? 'Saving…' : 'Replace hierarchy'}
             </button>
-            <span className="text-xs text-muted">
-              Sections not in the outline are removed, along with their notes.
-            </span>
-          </div>
-          {applyOutline.error && (
-            <p className="mt-2 text-sm text-flag">{(applyOutline.error as Error).message}</p>
-          )}
-        </div>
-      )}
-
-      <h2 className="mt-10 text-sm font-semibold uppercase tracking-wide text-muted">Hierarchy</h2>
-      {sections.length === 0 ? (
-        <p className="mt-2 text-sm text-muted">
-          Nothing here yet. Paste an outline above, or add sections in the sidebar.
+          </>
+        }
+      >
+        <textarea
+          id="outline"
+          className="input h-64 resize-none font-mono text-xs leading-relaxed"
+          value={outline}
+          onChange={(event) => setOutline(event.target.value)}
+          placeholder={EXAMPLE_OUTLINE}
+        />
+        <p className="mt-2 text-xs leading-relaxed text-muted">
+          Leading numbering is ignored — numbers are derived from position, so reordering the
+          tree later renumbers everything automatically without breaking any links.
         </p>
-      ) : (
-        <ul className="mt-2">
-          {sections.map((section) => (
-            <li key={section.id} style={{ paddingLeft: `${(section.depth - 1) * 16}px` }}>
-              <Link
-                to={`/modules/${moduleId}/sections/${section.id}`}
-                className="flex items-baseline gap-2 rounded px-2 py-1 hover:bg-panel"
-              >
-                <span className="font-mono text-xs text-muted">{section.number}</span>
-                <span>{section.title}</span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
+      </Modal>
     </div>
   );
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function Stat({
+  icon,
+  label,
+  value,
+}: {
+  icon: 'layers' | 'file' | 'check';
+  label: string;
+  value: number;
+}) {
   return (
     <div className="card p-4">
-      <div className="text-2xl font-semibold">{value}</div>
-      <div className="text-xs uppercase tracking-wide text-muted">{label}</div>
+      <span className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted">
+        <Icon name={icon} size={13} />
+        {label}
+      </span>
+      <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
     </div>
   );
 }

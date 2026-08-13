@@ -2,7 +2,51 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Two palettes, one set of names.
+ *
+ * The light theme is warm and paper-like because notes get read for hours at a
+ * stretch and a pure-white page is tiring. The dark theme is a true dark grey
+ * rather than black, for the same reason in reverse: maximum contrast is not
+ * the same thing as comfortable contrast.
+ */
 @layer base {
+  :root {
+    --canvas: 250 249 246;
+    --panel: 255 255 255;
+    --raised: 255 255 255;
+    --ink: 26 24 21;
+    --muted: 108 104 97;
+    --faint: 150 146 138;
+    --line: 229 225 217;
+    --accent: 30 106 88;
+    --accent-soft: 232 241 238;
+    --accent-ink: 255 255 255;
+    --flag: 165 74 30;
+    --flag-soft: 251 238 228;
+    --warn: 146 94 8;
+    --warn-soft: 253 244 224;
+    color-scheme: light;
+  }
+
+  .dark {
+    --canvas: 24 24 27;
+    --panel: 32 32 36;
+    --raised: 40 40 45;
+    --ink: 237 235 231;
+    --muted: 161 157 150;
+    --faint: 116 113 107;
+    --line: 56 56 62;
+    --accent: 94 190 165;
+    --accent-soft: 31 56 51;
+    --accent-ink: 18 32 29;
+    --flag: 226 145 100;
+    --flag-soft: 58 41 32;
+    --warn: 226 178 92;
+    --warn-soft: 56 46 28;
+    color-scheme: dark;
+  }
+
   html,
   body,
   #root {
@@ -11,40 +55,111 @@
 
   body {
     @apply bg-canvas text-ink antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  /* One consistent focus ring everywhere, and only for keyboard users. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent/60 ring-offset-1 ring-offset-canvas;
+  }
+
+  ::selection {
+    @apply bg-accent/20;
+  }
+
+  /* Slim scrollbars, so the sidebar does not look like a spreadsheet. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--line)) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    @apply rounded-full border-[3px] border-solid border-transparent bg-line bg-clip-content;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    @apply bg-faint bg-clip-content;
   }
 }
 
 @layer components {
   .btn {
-    @apply inline-flex items-center gap-1.5 rounded-md border border-line bg-panel px-3 py-1.5
-           text-sm font-medium text-ink transition-colors hover:bg-canvas
-           disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex select-none items-center justify-center gap-1.5 rounded-lg border border-line
+           bg-panel px-3 py-1.5 text-sm font-medium text-ink shadow-sm transition
+           hover:bg-canvas active:scale-[0.98]
+           disabled:pointer-events-none disabled:opacity-45;
   }
 
   .btn-primary {
-    @apply border-accent bg-accent text-white hover:bg-accent/90;
+    @apply border-transparent bg-accent text-accent-ink shadow-sm hover:bg-accent/90;
+  }
+
+  .btn-ghost {
+    @apply border-transparent bg-transparent shadow-none hover:bg-line/50;
+  }
+
+  .btn-danger {
+    @apply border-transparent bg-flag text-white hover:bg-flag/90;
+  }
+
+  .btn-sm {
+    @apply gap-1 rounded-md px-2 py-1 text-xs;
+  }
+
+  /* Square icon-only button, used for close and toolbar affordances. */
+  .btn-icon {
+    @apply inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted
+           transition hover:bg-line/50 hover:text-ink active:scale-95;
   }
 
   .input {
-    @apply w-full rounded-md border border-line bg-panel px-3 py-1.5 text-sm
-           outline-none focus:border-accent focus:ring-1 focus:ring-accent;
+    @apply w-full rounded-lg border border-line bg-panel px-3 py-1.5 text-sm text-ink
+           shadow-sm transition placeholder:text-faint
+           focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25;
   }
 
   .label {
-    @apply mb-1 block text-xs font-medium uppercase tracking-wide text-muted;
+    @apply mb-1 block text-2xs font-semibold uppercase tracking-wider text-muted;
   }
 
   .card {
-    @apply rounded-lg border border-line bg-panel;
+    @apply rounded-xl border border-line bg-panel shadow-card;
+  }
+
+  /* Small uppercase heading that separates sidebar regions. */
+  .rail-heading {
+    @apply flex items-center justify-between px-3 pb-1 pt-3 text-2xs font-semibold
+           uppercase tracking-wider text-faint;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-2xs font-medium;
+  }
+
+  .skeleton {
+    @apply relative overflow-hidden rounded-md bg-line/60;
+  }
+  .skeleton::after {
+    @apply absolute inset-0 -translate-x-full;
+    content: '';
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      rgb(var(--panel) / 0.6),
+      transparent
+    );
+    animation: shimmer 1.4s infinite;
   }
 }
 
 /*
- * The note editor. Notes are read for hours at a time, so this is set at a
- * comfortable measure with generous leading rather than dense UI spacing.
+ * The note editor. Set at a comfortable reading measure with generous leading,
+ * because this is the surface you stare at for hours.
  */
 .note-block .ProseMirror {
-  @apply min-h-[1.75rem] leading-relaxed outline-none;
+  @apply min-h-[1.75rem] leading-[1.7] outline-none;
 }
 
 .note-block .ProseMirror p {
@@ -52,19 +167,19 @@
 }
 
 .note-block .ProseMirror ul {
-  @apply my-1 list-disc space-y-1 pl-5;
+  @apply my-1 list-disc space-y-1 pl-5 marker:text-faint;
 }
 
 .note-block .ProseMirror ol {
-  @apply my-1 list-decimal space-y-1 pl-5;
+  @apply my-1 list-decimal space-y-1 pl-5 marker:text-faint;
 }
 
 .note-block .ProseMirror h1 {
-  @apply mb-1 mt-2 text-xl font-semibold;
+  @apply mb-1 mt-2 text-xl font-semibold tracking-tight;
 }
 
 .note-block .ProseMirror h2 {
-  @apply mb-1 mt-2 text-lg font-semibold;
+  @apply mb-1 mt-2 text-lg font-semibold tracking-tight;
 }
 
 .note-block .ProseMirror h3 {
@@ -72,15 +187,24 @@
 }
 
 .note-block .ProseMirror code {
-  @apply rounded bg-canvas px-1 py-0.5 font-mono text-[0.85em];
+  @apply rounded bg-line/60 px-1 py-0.5 font-mono text-[0.85em];
 }
 
 .note-block .ProseMirror blockquote {
   @apply border-l-2 border-line pl-3 italic text-muted;
 }
 
-/* Placeholder text for an empty block. */
 .note-block .ProseMirror p.is-editor-empty:first-child::before {
-  @apply pointer-events-none float-left h-0 text-muted;
+  @apply pointer-events-none float-left h-0 text-faint;
   content: attr(data-placeholder);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

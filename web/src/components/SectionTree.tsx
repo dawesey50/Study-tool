@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { NavLink, useParams } from 'react-router-dom';
 import { api, flattenSections, type SectionNode } from '../lib/api';
+import { Icon } from './ui/Icon';
+import { useToast } from './ui/Toast';
 
 /**
  * The section hierarchy, always visible.
@@ -12,6 +14,7 @@ import { api, flattenSections, type SectionNode } from '../lib/api';
  */
 export function SectionTree({ moduleId }: { moduleId: string }) {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const { sectionId: activeId } = useParams<{ sectionId: string }>();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   // Which section is being dragged is a ref rather than state: it is read
@@ -19,7 +22,6 @@ export function SectionTree({ moduleId }: { moduleId: string }) {
   // make the drop depend on a re-render having already committed.
   const dragId = useRef<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ id: string; where: DropWhere } | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   const { data: sections, isLoading } = useQuery({
     queryKey: ['sections', moduleId],
@@ -30,28 +32,40 @@ export function SectionTree({ moduleId }: { moduleId: string }) {
     mutationFn: ({ id, parentId, position }: { id: string; parentId: string | null; position: number }) =>
       api.moveSection(id, parentId, position),
     onSuccess: (tree) => {
-      setError(null);
       queryClient.setQueryData(['sections', moduleId], tree);
       queryClient.invalidateQueries({ queryKey: ['module', moduleId] });
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (error: Error) => toast.error('Could not move that section', error.message),
   });
 
   const create = useMutation({
     mutationFn: (parentId: string | null) =>
       api.createSection({ moduleId, title: 'New section', parentId }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sections', moduleId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sections', moduleId] });
+      queryClient.invalidateQueries({ queryKey: ['modules'] });
+    },
+    onError: (error: Error) => toast.error('Could not add a section', error.message),
   });
 
-  if (isLoading) return <div className="p-2 text-sm text-muted">Loading…</div>;
+  if (isLoading) {
+    return (
+      <div className="space-y-1 px-2 py-1">
+        <div className="skeleton h-6" />
+        <div className="skeleton ml-3 h-6" />
+        <div className="skeleton ml-3 h-6 w-4/5" />
+      </div>
+    );
+  }
+
   if (!sections?.length) {
     return (
-      <div className="space-y-3 p-2">
-        <p className="text-sm text-muted">
-          No sections yet. Build the hierarchy by hand, or add sources and let the tree grow
-          around them.
+      <div className="space-y-2 px-2 py-1">
+        <p className="text-xs leading-relaxed text-muted">
+          No sections yet. Paste an outline on the module page, or start one here.
         </p>
-        <button className="btn w-full" onClick={() => create.mutate(null)}>
+        <button className="btn btn-sm w-full" onClick={() => create.mutate(null)}>
+          <Icon name="plus" size={13} />
           Add first section
         </button>
       </div>
@@ -106,22 +120,20 @@ export function SectionTree({ moduleId }: { moduleId: string }) {
     });
 
   return (
-    <div className="space-y-1">
-      {error && (
-        <div className="rounded border border-flag/30 bg-flag-soft px-2 py-1 text-xs text-flag">
-          {error}
-        </div>
-      )}
+    <div className="space-y-px">
       {rows(sections)}
+
       <button
-        className="mt-2 w-full rounded px-2 py-1 text-left text-xs text-muted hover:bg-canvas"
+        className="mt-1 flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-muted transition hover:bg-line/40 hover:text-ink"
         onClick={() => create.mutate(null)}
       >
-        + Add top-level section
+        <Icon name="plus" size={13} />
+        Add section
       </button>
-      <div className="px-2 pt-1 text-[11px] text-muted">
+
+      <p className="px-2 pt-1 text-2xs text-faint">
         {flattenSections(sections).length} sections · drag to reorder
-      </div>
+      </p>
     </div>
   );
 }
@@ -185,32 +197,41 @@ function TreeRow({
         onDrop(whereFrom(event));
       }}
       className={[
-        'group relative rounded',
-        dropTarget === 'into' ? 'bg-accent-soft ring-1 ring-accent' : '',
-        dropTarget === 'before' ? 'border-t-2 border-accent' : '',
-        dropTarget === 'after' ? 'border-b-2 border-accent' : '',
+        'group relative rounded-lg',
+        dropTarget === 'into' ? 'bg-accent-soft ring-1 ring-inset ring-accent' : '',
+        dropTarget === 'before' ? 'shadow-[inset_0_2px_0_0_rgb(var(--accent))]' : '',
+        dropTarget === 'after' ? 'shadow-[inset_0_-2px_0_0_rgb(var(--accent))]' : '',
       ].join(' ')}
-      style={{ paddingLeft: `${(node.depth - 1) * 12}px` }}
+      style={{ paddingLeft: `${(node.depth - 1) * 11}px` }}
     >
       <div
-        className={`flex items-center gap-1 rounded px-1 py-1 text-sm ${
-          active ? 'bg-accent-soft font-medium text-accent' : 'hover:bg-canvas'
+        className={`flex items-center gap-0.5 rounded-lg pr-1.5 transition ${
+          active ? 'bg-accent-soft' : 'hover:bg-line/40'
         }`}
       >
         <button
           onClick={onToggle}
-          className={`w-4 shrink-0 text-xs text-muted ${hasChildren ? '' : 'invisible'}`}
+          className={`flex h-6 w-5 shrink-0 items-center justify-center text-faint transition hover:text-ink ${
+            hasChildren ? '' : 'pointer-events-none opacity-0'
+          }`}
           aria-label={collapsed ? 'Expand' : 'Collapse'}
+          tabIndex={hasChildren ? 0 : -1}
         >
-          {collapsed ? '▸' : '▾'}
+          <Icon name={collapsed ? 'chevronRight' : 'chevronDown'} size={13} />
         </button>
 
         <NavLink
           to={`/modules/${moduleId}/sections/${node.id}`}
-          className="flex min-w-0 flex-1 items-baseline gap-2"
-          title={node.title}
+          className={`flex min-w-0 flex-1 items-baseline gap-2 py-1.5 text-sm ${
+            active ? 'font-medium text-accent' : ''
+          }`}
+          title={`${node.number} ${node.title}`}
         >
-          <span className="shrink-0 font-mono text-xs text-muted">{node.number}</span>
+          <span
+            className={`shrink-0 font-mono text-2xs tabular-nums ${active ? 'text-accent' : 'text-faint'}`}
+          >
+            {node.number}
+          </span>
           <span className="truncate">{node.title}</span>
         </NavLink>
 
@@ -226,15 +247,21 @@ function TreeRow({
  */
 function StatusDot({ status }: { status: SectionNode['status'] }) {
   const styles: Record<SectionNode['status'], string> = {
-    empty: 'bg-line',
-    drafted: 'bg-amber-400',
+    empty: 'bg-transparent ring-1 ring-line',
+    drafted: 'bg-warn',
     edited: 'bg-accent',
     complete: 'bg-accent',
+  };
+  const labels: Record<SectionNode['status'], string> = {
+    empty: 'Nothing written yet',
+    drafted: 'Draft notes',
+    edited: 'You have edited these notes',
+    complete: 'Marked complete',
   };
   return (
     <span
       className={`h-1.5 w-1.5 shrink-0 rounded-full ${styles[status]}`}
-      title={`Status: ${status}`}
+      title={labels[status]}
     />
   );
 }
