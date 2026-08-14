@@ -6,7 +6,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { config } from '../config.js';
 import { getDb, schema } from '../db/index.js';
-import { ingestSource } from '../ingest/index.js';
+import { getJob, startIngest } from '../ingest/jobs.js';
 import { newId } from '../lib/ids.js';
 import { fromStoredPath, storedPath, toMediaUrl } from '../lib/paths.js';
 import { listMappings, proposeSectionsForSource } from '../services/mapping.js';
@@ -159,17 +159,44 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
     return db.select().from(schema.sources).where(eq(schema.sources.id, id)).get();
   });
 
-  /** Parse, chunk, embed and map. Safe to re-run; it replaces rather than appends. */
+  /**
+   * Start parsing, chunking, embedding and mapping. Safe to re-run; it
+   * replaces rather than appends.
+   *
+   * Returns immediately with a job to follow rather than holding the request
+   * open. A textbook takes minutes, and waiting inside the handler blocked
+   * every other call behind it — which is what made writing notes impossible
+   * while a large document was being read.
+   */
   app.post('/api/sources/:id/ingest', async (request, reply) => {
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const source = db.select().from(schema.sources).where(eq(schema.sources.id, id)).get();
     if (!source) return reply.code(404).send({ error: 'Source not found' });
 
-    try {
-      return await ingestSource(id);
-    } catch (error) {
-      return reply.code(422).send({ error: (error as Error).message });
+    reply.code(202);
+    return startIngest(id);
+  });
+
+  /** Follow an ingestion in progress. */
+  app.get('/api/sources/:id/ingest', async (request, reply) => {
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+    const job = getJob(id);
+    if (!job) {
+      const source = db.select().from(schema.sources).where(eq(schema.sources.id, id)).get();
+      if (!source) return reply.code(404).send({ error: 'Source not found' });
+      // No job in memory: either it was never started this run, or the server
+      // restarted. The stored status is the truth in that case.
+      return {
+        sourceId: id,
+        phase: source.status === 'ingested' ? 'done' : source.status === 'failed' ? 'failed' : 'queued',
+        done: 0,
+        total: 0,
+        message: source.error ?? '',
+        startedAt: 0,
+        ...(source.error ? { error: source.error } : {}),
+      };
     }
+    return job;
   });
 
   app.get('/api/sources/:id/chunks', async (request) => {

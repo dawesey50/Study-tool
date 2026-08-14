@@ -138,6 +138,21 @@ export interface IngestResult {
   warnings: string[];
 }
 
+export type IngestPhase = 'queued' | 'parsing' | 'embedding' | 'mapping' | 'done' | 'failed';
+
+/** Ingestion runs in the background; this is how its progress is followed. */
+export interface IngestJob {
+  sourceId: string;
+  phase: IngestPhase;
+  done: number;
+  total: number;
+  message: string;
+  startedAt: number;
+  finishedAt?: number;
+  result?: IngestResult;
+  error?: string;
+}
+
 export interface Health {
   ok: boolean;
   embeddings:
@@ -234,8 +249,9 @@ export const api = {
   getSource: (id: string) => request<SourceDetail>(`/api/sources/${id}`),
   uploadSource: (moduleId: string, form: FormData) =>
     request<Source>(`/api/modules/${moduleId}/sources`, { method: 'POST', body: form }),
-  ingestSource: (id: string) =>
-    request<IngestResult>(`/api/sources/${id}/ingest`, { method: 'POST' }),
+  /** Starts ingestion and returns immediately; follow it with ingestStatus. */
+  ingestSource: (id: string) => request<IngestJob>(`/api/sources/${id}/ingest`, { method: 'POST' }),
+  ingestStatus: (id: string) => request<IngestJob>(`/api/sources/${id}/ingest`),
   getChunks: (id: string) => request<Chunk[]>(`/api/sources/${id}/chunks`),
   setSourceSections: (id: string, sectionIds: string[]) =>
     request<SectionMapping[]>(`/api/sources/${id}/sections`, {

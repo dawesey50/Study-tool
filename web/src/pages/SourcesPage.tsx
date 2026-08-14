@@ -1,7 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { api, flattenSections, type IngestResult, type Source, type SourceType } from '../lib/api';
+import {
+  api,
+  flattenSections,
+  type IngestJob,
+  type IngestResult,
+  type Source,
+  type SourceType,
+} from '../lib/api';
 import { Icon, type IconName } from '../components/ui/Icon';
 import { useConfirm } from '../components/ui/Confirm';
 import { useToast } from '../components/ui/Toast';
@@ -33,6 +40,7 @@ export function SourcesPage() {
   const [title, setTitle] = useState('');
   const [dragging, setDragging] = useState(false);
   const [lastIngest, setLastIngest] = useState<Record<string, IngestResult>>({});
+  const [job, setJob] = useState<IngestJob | null>(null);
 
   const { data: sources, isLoading } = useQuery({
     queryKey: ['sources', moduleId],
@@ -47,9 +55,9 @@ export function SourcesPage() {
   };
 
   /**
-   * Upload then ingest, as two steps. The file is safely on disk before any
-   * parser runs, so a parse failure is recoverable with a re-ingest rather
-   * than needing the file uploaded again.
+   * Upload, then follow the ingestion rather than waiting on one long request.
+   * A textbook takes minutes to read, and the rest of the app stays usable
+   * throughout — you can write notes in another section while it works.
    */
   const upload = useMutation({
     mutationFn: async (file: File) => {
@@ -59,14 +67,31 @@ export function SourcesPage() {
       form.append('file', file);
 
       const source = await api.uploadSource(moduleId!, form);
-      const result = await api.ingestSource(source.id);
-      return { source, result };
-    },
-    onSuccess: ({ source, result }) => {
       setTitle('');
       if (fileRef.current) fileRef.current.value = '';
-      setLastIngest((previous) => ({ ...previous, [source.id]: result }));
       invalidate();
+
+      await api.ingestSource(source.id);
+
+      // Poll until it finishes. Slow enough not to be chatty, quick enough
+      // that the page bar still looks alive.
+      for (;;) {
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        const status = await api.ingestStatus(source.id);
+        setJob(status);
+        if (status.phase === 'done' || status.phase === 'failed') return { source, status };
+      }
+    },
+    onSuccess: ({ source, status }) => {
+      setJob(null);
+      invalidate();
+
+      if (status.phase === 'failed' || !status.result) {
+        toast.error(`Could not read ${source.title}`, status.error ?? 'Ingestion failed.');
+        return;
+      }
+      const result = status.result;
+      setLastIngest((previous) => ({ ...previous, [source.id]: result }));
       toast.success(
         `Ingested ${source.title}`,
         `${result.chunks} chunks, ${result.figures} figures, ${result.proposedSections} section${
@@ -74,7 +99,10 @@ export function SourcesPage() {
         } proposed.`,
       );
     },
-    onError: (error: Error) => toast.error('Ingestion failed', error.message),
+    onError: (error: Error) => {
+      setJob(null);
+      toast.error('Ingestion failed', error.message);
+    },
   });
 
   if (!moduleId) return null;
@@ -151,12 +179,14 @@ export function SourcesPage() {
           />
           <Icon name="upload" size={22} className={dragging ? 'text-accent' : 'text-faint'} />
           <span className="mt-2 text-sm font-medium">
-            {upload.isPending ? 'Uploading and ingesting…' : 'Drop a file here, or click to choose'}
+            {upload.isPending ? 'Reading your document…' : 'Drop a file here, or click to choose'}
           </span>
           <span className="mt-1 text-xs text-muted">
             {ACCEPT.replace(/\./g, '').replace(/,/g, ', ')} · ingestion starts straight away
           </span>
         </label>
+
+        {upload.isPending && <IngestProgress job={job} />}
       </div>
 
       <div className="mt-8 space-y-3">
@@ -215,10 +245,25 @@ function SourceCard({
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['sources', moduleId] });
 
   const reingest = useMutation({
-    mutationFn: () => api.ingestSource(source.id),
-    onSuccess: (result) => {
+    mutationFn: async () => {
+      await api.ingestSource(source.id);
+      // Same background job as a fresh upload, so follow it the same way.
+      for (;;) {
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        const status = await api.ingestStatus(source.id);
+        if (status.phase === 'done' || status.phase === 'failed') return status;
+      }
+    },
+    onSuccess: (status) => {
       invalidate();
-      toast.success(`Re-ingested ${source.title}`, `${result.chunks} chunks, ${result.figures} figures.`);
+      if (status.phase === 'failed' || !status.result) {
+        toast.error('Re-ingestion failed', status.error ?? 'Could not read the file.');
+        return;
+      }
+      toast.success(
+        `Re-ingested ${source.title}`,
+        `${status.result.chunks} chunks, ${status.result.figures} figures.`,
+      );
     },
     onError: (error: Error) => toast.error('Re-ingestion failed', error.message),
   });
@@ -420,4 +465,37 @@ function StatusPill({ status }: { status: Source['status'] }) {
     failed: 'bg-flag-soft text-flag',
   };
   return <span className={`chip ${styles[status]}`}>{status}</span>;
+}
+
+/**
+ * Progress for an ingestion in flight.
+ *
+ * A long document used to give no feedback at all, which is indistinguishable
+ * from a hang — and since the work blocked the server, the app really was
+ * unusable while it ran. Both halves of that are fixed; this is the visible one.
+ */
+function IngestProgress({ job }: { job: IngestJob | null }) {
+  const percent =
+    job && job.total > 0 ? Math.min(100, Math.round((job.done / job.total) * 100)) : null;
+
+  return (
+    <div className="mt-3 rounded-lg border border-line bg-canvas p-3">
+      <div className="flex items-baseline justify-between gap-3 text-xs">
+        <span className="font-medium">{job?.message ?? 'Starting…'}</span>
+        {percent !== null && <span className="tabular-nums text-muted">{percent}%</span>}
+      </div>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line">
+        <div
+          className={`h-full rounded-full bg-accent transition-[width] duration-300 ${
+            percent === null ? 'w-1/3 animate-pulse' : ''
+          }`}
+          style={percent === null ? undefined : { width: `${percent}%` }}
+        />
+      </div>
+      <p className="mt-2 text-2xs leading-relaxed text-muted">
+        You can carry on using the rest of the app while this runs — writing notes in another
+        section is fine.
+      </p>
+    </div>
+  );
 }

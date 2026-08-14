@@ -33,7 +33,20 @@ export interface PdfParseOptions {
   figurePrefix: string;
   /** Slides get slideNo set as well as pageNo. */
   treatPagesAsSlides: boolean;
+  /** Reports page-by-page progress, so a long textbook is not a silent wait. */
+  onProgress?: (page: number, total: number) => void;
 }
+
+/**
+ * A single decoded image is capped at this many pixels (~64 megapixels, which
+ * is far beyond any real figure). Decoding one to RGBA costs four bytes per
+ * pixel, so without a ceiling a corrupt or pathological image could ask for
+ * gigabytes in one allocation.
+ */
+const MAX_IMAGE_PIXELS = 64_000_000;
+
+/** Beyond this many distinct figures, stop collecting rather than fill the disk. */
+const MAX_FIGURES = 2_000;
 
 export async function parsePdf(filePath: string, options: PdfParseOptions): Promise<ParseResult> {
   const pdfjs = await loadPdfjs();
@@ -48,7 +61,29 @@ export async function parsePdf(filePath: string, options: PdfParseOptions): Prom
 
   const blocks: ParsedBlock[] = [];
   const warnings: string[] = [];
-  const candidates: ImageCandidate[] = [];
+
+  /**
+   * Figures are written to disk the moment they are decoded, and only their
+   * metadata is kept.
+   *
+   * The earlier version accumulated every decoded image as raw RGBA and only
+   * wrote them at the end. That is fine for a lecture deck and ruinous for a
+   * textbook: 150 pages of scans held a gigabyte, and a real 900-page book
+   * would have asked for several — enough to take the whole machine down,
+   * which is exactly what happened. Peak memory now depends on the largest
+   * single image rather than on the length of the book.
+   */
+  const collector: FigureCollector = {
+    dir: options.figureDir,
+    prefix: options.figurePrefix,
+    minDimension: config.ingest.figureMinDimension,
+    written: new Map(),
+    pagesByHash: new Map(),
+    skippedSmall: 0,
+    skippedOversized: 0,
+    hitLimit: false,
+  };
+  fs.mkdirSync(collector.dir, { recursive: true });
 
   for (let pageNo = 1; pageNo <= doc.numPages; pageNo++) {
     const page = await doc.getPage(pageNo);
@@ -70,15 +105,21 @@ export async function parsePdf(filePath: string, options: PdfParseOptions): Prom
     }
 
     try {
-      candidates.push(...(await extractPageImages(pdfjs, page, pageNo, lines)));
+      await extractPageImages(pdfjs, page, pageNo, lines, collector);
     } catch (error) {
       warnings.push(`Page ${pageNo}: figure extraction failed (${(error as Error).message})`);
     }
 
     page.cleanup();
+    options.onProgress?.(pageNo, doc.numPages);
+
+    // Hand the event loop back between pages. Parsing a long document is
+    // minutes of CPU work, and without this the server answers nothing else in
+    // the meantime — which made the whole app look frozen during an ingest.
+    await new Promise((resolve) => setImmediate(resolve));
   }
 
-  const figures = writeFigures(candidates, options, warnings);
+  const figures = finaliseFigures(collector, warnings);
   await doc.destroy();
 
   return { blocks, figures, pageCount: doc.numPages, warnings };
@@ -180,15 +221,20 @@ function linesToText(lines: TextLine[]): string {
 // Figures
 // ---------------------------------------------------------------------------
 
-interface ImageCandidate {
-  pageNo: number;
-  width: number;
-  height: number;
-  /** RGBA pixel data. */
-  rgba: Buffer;
-  /** Content hash, used to drop logos and other repeated furniture. */
-  hash: string;
-  captionExtracted?: string;
+/**
+ * Accumulates figure metadata while the pixels themselves go straight to disk.
+ * Keyed by content hash, so an image repeated across pages is stored once.
+ */
+interface FigureCollector {
+  dir: string;
+  prefix: string;
+  minDimension: number;
+  written: Map<string, { absolutePath: string; pageNo: number; width: number; height: number; captionExtracted?: string }>;
+  /** Which pages each image appears on, for spotting template furniture. */
+  pagesByHash: Map<string, Set<number>>;
+  skippedSmall: number;
+  skippedOversized: number;
+  hitLimit: boolean;
 }
 
 async function extractPageImages(
@@ -196,10 +242,10 @@ async function extractPageImages(
   page: PdfPage,
   pageNo: number,
   lines: TextLine[],
-): Promise<ImageCandidate[]> {
+  collector: FigureCollector,
+): Promise<void> {
   const ops = await page.getOperatorList();
   const { OPS } = pdfjs;
-  const out: ImageCandidate[] = [];
 
   // The current transformation matrix places each image, which is drawn into
   // the unit square. Tracking it is what lets a figure be matched to the
@@ -233,31 +279,106 @@ async function extractPageImages(
         : await getImageObject(page, args[0] as string);
     if (!image?.data) continue;
 
+    // Cheap rejections first, before anything is decoded into memory.
+    if (image.width < collector.minDimension || image.height < collector.minDimension) {
+      collector.skippedSmall++;
+      continue;
+    }
+    if (image.width * image.height > MAX_IMAGE_PIXELS) {
+      collector.skippedOversized++;
+      continue;
+    }
+    if (collector.written.size >= MAX_FIGURES) {
+      collector.hitLimit = true;
+      continue;
+    }
+
     const rgba = toRgba(image);
     if (!rgba) continue;
 
-    out.push({
-      pageNo,
-      width: image.width,
-      height: image.height,
-      rgba,
-      hash: createHash('sha1').update(rgba).digest('hex'),
-      captionExtracted: findCaption(lines, placedBox(ctm)),
-    });
-  }
+    const hash = createHash('sha1').update(rgba).digest('hex');
+    const pages = collector.pagesByHash.get(hash) ?? new Set<number>();
+    pages.add(pageNo);
+    collector.pagesByHash.set(hash, pages);
 
-  return out;
+    // Write once per distinct image, then let the pixels go. Everything after
+    // this point works from the file on disk.
+    if (!collector.written.has(hash)) {
+      const filename = `${collector.prefix}-p${pageNo}-${hash.slice(0, 8)}.png`;
+      const absolutePath = path.join(collector.dir, filename);
+      const png = new PNG({ width: image.width, height: image.height });
+      rgba.copy(png.data);
+      fs.writeFileSync(absolutePath, PNG.sync.write(png));
+
+      const caption = findCaption(lines, placedBox(ctm));
+      collector.written.set(hash, {
+        absolutePath,
+        pageNo,
+        width: image.width,
+        height: image.height,
+        ...(caption ? { captionExtracted: caption } : {}),
+      });
+    }
+  }
 }
 
 /**
- * Image objects resolve asynchronously through a callback registry, and an
- * object that never resolves would hang ingestion, so the wait is bounded.
+ * Decide which of the written figures to keep.
+ *
+ * An image appearing on three or more pages is a crest, a template band or a
+ * running header rather than a figure, and the spec is explicit that decorative
+ * images do not belong in the notes. Those files are deleted here.
+ */
+function finaliseFigures(collector: FigureCollector, warnings: string[]): ExtractedFigure[] {
+  const figures: ExtractedFigure[] = [];
+  let skippedRepeated = 0;
+
+  for (const [hash, meta] of collector.written) {
+    if ((collector.pagesByHash.get(hash)?.size ?? 0) >= 3) {
+      fs.rmSync(meta.absolutePath, { force: true });
+      skippedRepeated++;
+      continue;
+    }
+    figures.push(meta);
+  }
+
+  if (collector.skippedSmall > 0) {
+    warnings.push(`Skipped ${collector.skippedSmall} image(s) below the size threshold.`);
+  }
+  if (collector.skippedOversized > 0) {
+    warnings.push(`Skipped ${collector.skippedOversized} image(s) too large to decode safely.`);
+  }
+  if (skippedRepeated > 0) {
+    warnings.push(`Skipped ${skippedRepeated} image(s) repeated across pages as template furniture.`);
+  }
+  if (collector.hitLimit) {
+    warnings.push(`Stopped after ${MAX_FIGURES} figures; this document has an unusual number.`);
+  }
+
+  return figures.sort((a, b) => (a.pageNo ?? 0) - (b.pageNo ?? 0));
+}
+
+/**
+ * Fetch a decoded image from pdfjs.
+ *
+ * pdfjs keeps images in one of two registries and the name says which. Once a
+ * document is long enough, it starts promoting images to a document-level
+ * cache and prefixes their names with "g_"; those are delivered through
+ * commonObjs, and asking page.objs for one registers a callback that is never
+ * called. Looking only in page.objs meant that from roughly page 256 of a
+ * textbook, every single image waited out the timeout and produced nothing —
+ * hours of apparent hanging with no figures and no error.
+ *
+ * The wait stays bounded anyway, because one unresolvable object should cost a
+ * moment rather than stall the whole book.
  */
 function getImageObject(page: PdfPage, name: string): Promise<PdfImage | null> {
+  const store = name.startsWith('g_') ? page.commonObjs : page.objs;
+
   return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(null), 5000);
+    const timer = setTimeout(() => resolve(null), 3000);
     try {
-      page.objs.get(name, (obj: unknown) => {
+      store.get(name, (obj: unknown) => {
         clearTimeout(timer);
         resolve((obj as PdfImage | undefined) ?? null);
       });
@@ -388,69 +509,4 @@ function toRgba(image: PdfImage): Buffer | null {
   }
 }
 
-/**
- * Write the surviving candidates to disk as PNGs.
- *
- * Two filters run first. Anything smaller than FIGURE_MIN_DIMENSION is a bullet,
- * rule or icon rather than a figure. Anything whose pixels repeat across three
- * or more pages is slide furniture — a university crest, a template band — and
- * the spec is explicit that decorative images do not belong in the notes.
- */
-function writeFigures(
-  candidates: ImageCandidate[],
-  options: PdfParseOptions,
-  warnings: string[],
-): ExtractedFigure[] {
-  const minDimension = config.ingest.figureMinDimension;
-
-  const pagesByHash = new Map<string, Set<number>>();
-  for (const candidate of candidates) {
-    const pages = pagesByHash.get(candidate.hash) ?? new Set<number>();
-    pages.add(candidate.pageNo);
-    pagesByHash.set(candidate.hash, pages);
-  }
-
-  fs.mkdirSync(options.figureDir, { recursive: true });
-
-  const figures: ExtractedFigure[] = [];
-  const written = new Set<string>();
-  let skippedSmall = 0;
-  let skippedRepeated = 0;
-
-  for (const candidate of candidates) {
-    if (candidate.width < minDimension || candidate.height < minDimension) {
-      skippedSmall++;
-      continue;
-    }
-    if ((pagesByHash.get(candidate.hash)?.size ?? 0) >= 3) {
-      skippedRepeated++;
-      continue;
-    }
-    // The same figure repeated on one page is still one figure.
-    if (written.has(candidate.hash)) continue;
-    written.add(candidate.hash);
-
-    const filename = `${options.figurePrefix}-p${candidate.pageNo}-${candidate.hash.slice(0, 8)}.png`;
-    const absolutePath = path.join(options.figureDir, filename);
-
-    const png = new PNG({ width: candidate.width, height: candidate.height });
-    candidate.rgba.copy(png.data);
-    fs.writeFileSync(absolutePath, PNG.sync.write(png));
-
-    figures.push({
-      absolutePath,
-      pageNo: candidate.pageNo,
-      width: candidate.width,
-      height: candidate.height,
-      ...(candidate.captionExtracted ? { captionExtracted: candidate.captionExtracted } : {}),
-    });
-  }
-
-  if (skippedSmall > 0) warnings.push(`Skipped ${skippedSmall} image(s) below the size threshold.`);
-  if (skippedRepeated > 0) {
-    warnings.push(`Skipped ${skippedRepeated} image(s) repeated across pages as template furniture.`);
-  }
-
-  return figures;
-}
 

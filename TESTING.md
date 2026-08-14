@@ -148,6 +148,11 @@ behaves that way you will see it immediately in the figures strip.
 exactly what `npm run test:e2e` exists to close — both Phase 1 browser bugs
 were invisible to the API tests.
 
+**A big document seems to hang.** It should not any more: ingestion runs as a
+background job with a progress bar, and the rest of the app stays usable while
+it works. A 600-page textbook takes about ten seconds to read. If it genuinely
+stops moving, the progress line names the page it stopped on.
+
 **Ingest reports chunks but zero figures.** Either the PDF has no embedded
 images (text-only, or a scan where the whole page is one image), or they fell
 below `FIGURE_MIN_DIMENSION`, or the same image repeated on three or more

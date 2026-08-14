@@ -8,6 +8,7 @@ import Fastify from 'fastify';
 import { ZodError } from 'zod';
 import { config, repoRoot } from './config.js';
 import { closeDb, initDb, isVecAvailable } from './db/index.js';
+import { resetInterruptedIngests } from './ingest/jobs.js';
 import { embedderStatus } from './embeddings/index.js';
 import { moduleRoutes } from './routes/modules.js';
 import { noteRoutes } from './routes/notes.js';
@@ -21,6 +22,12 @@ export interface BuildOptions {
 
 export async function buildServer(options: BuildOptions = {}) {
   initDb();
+
+  // Anything left mid-ingest by a previous run has no job behind it any more.
+  const interrupted = resetInterruptedIngests();
+  if (interrupted > 0) {
+    console.warn(`[ingest] ${interrupted} source(s) were interrupted by a restart; re-ingest them.`);
+  }
 
   const app = Fastify({
     logger:

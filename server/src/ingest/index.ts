@@ -32,7 +32,16 @@ export interface IngestResult {
  * figures rather than accumulating duplicates. That matters because the most
  * common reason to re-run is a parser fix.
  */
-export async function ingestSource(sourceId: string): Promise<IngestResult> {
+export type IngestProgress = (
+  phase: 'parsing' | 'embedding' | 'mapping',
+  done: number,
+  total: number,
+) => void;
+
+export async function ingestSource(
+  sourceId: string,
+  onProgress?: IngestProgress,
+): Promise<IngestResult> {
   const db = getDb();
   const source = db.select().from(schema.sources).where(eq(schema.sources.id, sourceId)).get();
   if (!source) throw new Error(`Source not found: ${sourceId}`);
@@ -52,6 +61,7 @@ export async function ingestSource(sourceId: string): Promise<IngestResult> {
     const parsed = await parseFile(absolutePath, source.type, {
       figureDir,
       figurePrefix: slugify(source.title, 40),
+      onProgress: (page, total) => onProgress?.('parsing', page, total),
     });
 
     // Clear any previous run before writing the new one.
@@ -59,7 +69,10 @@ export async function ingestSource(sourceId: string): Promise<IngestResult> {
     db.delete(schema.figures).where(eq(schema.figures.sourceId, sourceId)).run();
 
     const chunks = chunkBlocks(parsed.blocks);
-    const chunkVectors = await embedSafely(chunks.map((c) => c.text));
+    const chunkVectors = await embedSafely(
+      chunks.map((c) => c.text),
+      (done, total) => onProgress?.('embedding', done, total),
+    );
     const embedded = chunkVectors.some((v) => v !== null);
 
     const chunkIds = chunks.map(() => newId());
@@ -125,6 +138,7 @@ export async function ingestSource(sourceId: string): Promise<IngestResult> {
       if (vector && figureTexts[i]) indexVector('figure', figureIds[i]!, vector);
     }
 
+    onProgress?.('mapping', 0, 1);
     const proposed = await proposeSectionsForSource(sourceId);
 
     return {
@@ -148,7 +162,11 @@ export async function ingestSource(sourceId: string): Promise<IngestResult> {
 async function parseFile(
   absolutePath: string,
   type: schema.SourceType,
-  options: { figureDir: string; figurePrefix: string },
+  options: {
+    figureDir: string;
+    figurePrefix: string;
+    onProgress?: (page: number, total: number) => void;
+  },
 ): Promise<ParseResult> {
   const extension = path.extname(absolutePath).toLowerCase();
 

@@ -78,6 +78,37 @@ function multipart(
 
 const json = <T>(response: { body: string }): T => JSON.parse(response.body) as T;
 
+interface IngestJob {
+  phase: string;
+  done: number;
+  total: number;
+  message: string;
+  result?: { chunks: number; figures: number; embedded: boolean; warnings: string[] };
+  error?: string;
+}
+
+/**
+ * Ingestion is a background job now, so tests start it and then follow it.
+ * Polling here mirrors exactly what the browser does.
+ */
+async function ingestAndWait(sourceId: string, timeoutMs = 120_000): Promise<IngestJob> {
+  const started = await app.inject({
+    method: 'POST',
+    url: `/api/sources/${sourceId}/ingest`,
+    headers: { 'content-type': 'application/json' },
+  });
+  assert.equal(started.statusCode, 202, 'ingestion should be accepted, not awaited');
+
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const response = await app.inject({ method: 'GET', url: `/api/sources/${sourceId}/ingest` });
+    const job = json<IngestJob>(response);
+    if (job.phase === 'done' || job.phase === 'failed') return job;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error('ingestion did not finish in time');
+}
+
 // Shared across tests, in declaration order.
 let moduleId: string;
 let sectionIds: Record<string, string> = {};
@@ -211,27 +242,44 @@ test('an unsupported file type is rejected', async () => {
   assert.match(json<{ error: string }>(response).error, /Unsupported file type/);
 });
 
-test('ingesting extracts chunks and figures, and needs no request body', async () => {
+test('ingesting runs as a job and extracts chunks and figures', async () => {
   // A bodyless POST that still declares JSON must not be rejected: this is
   // exactly the shape a browser fetch sends, and it used to fail with a 400.
-  const response = await app.inject({
+  const job = await ingestAndWait(pdfSourceId);
+
+  assert.equal(job.phase, 'done', job.error ?? '');
+  assert.equal(job.result?.chunks, 2, 'one chunk per page of the fixture');
+  assert.equal(job.result?.figures, 2, 'both captioned figures should be extracted');
+  assert.equal(job.result?.embedded, true);
+  assert.deepEqual(job.result?.warnings, []);
+});
+
+test('a source with a figure repeated across pages yields one figure per image', async () => {
+  const { payload, headers } = multipart(
+    { type: 'textbook', title: 'Reused figures' },
+    {
+      field: 'file',
+      filename: 'reused.pdf',
+      contentType: 'application/pdf',
+      path: path.join(FIXTURES, 'reused-figure.pdf'),
+    },
+  );
+
+  const uploaded = await app.inject({
     method: 'POST',
-    url: `/api/sources/${pdfSourceId}/ingest`,
-    headers: { 'content-type': 'application/json' },
+    url: `/api/modules/${moduleId}/sources`,
+    payload,
+    headers,
   });
-  assert.equal(response.statusCode, 200);
+  const sourceId = json<{ id: string }>(uploaded).id;
 
-  const result = json<{
-    chunks: number;
-    figures: number;
-    embedded: boolean;
-    warnings: string[];
-  }>(response);
+  const job = await ingestAndWait(sourceId);
+  assert.equal(job.phase, 'done', job.error ?? '');
+  // Four pages, two distinct diagrams, each drawn twice. Identical images are
+  // stored once rather than per appearance.
+  assert.equal(job.result?.figures, 2);
 
-  assert.equal(result.chunks, 2, 'one chunk per page of the fixture');
-  assert.equal(result.figures, 2, 'both captioned figures should be extracted');
-  assert.equal(result.embedded, true);
-  assert.deepEqual(result.warnings, []);
+  await app.inject({ method: 'DELETE', url: `/api/sources/${sourceId}` });
 });
 
 test('chunks carry a citation naming the exact slide', async () => {
@@ -285,8 +333,8 @@ test('a transcript keeps its timestamps and splits at a long silence', async () 
   });
   const sourceId = json<{ id: string }>(uploaded).id;
 
-  const ingested = await app.inject({ method: 'POST', url: `/api/sources/${sourceId}/ingest` });
-  assert.equal(ingested.statusCode, 200);
+  const job = await ingestAndWait(sourceId);
+  assert.equal(job.phase, 'done', job.error ?? '');
 
   const response = await app.inject({ method: 'GET', url: `/api/sources/${sourceId}/chunks` });
   const chunks = json<Array<{ location: string; text: string; timestamp: number }>>(response);

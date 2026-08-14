@@ -51,13 +51,36 @@ export function embedderStatus(): EmbedderStatus {
 }
 
 /**
+ * How many texts go to the model at once.
+ *
+ * Everything is embedded in slices of this size rather than in one call. A
+ * textbook produces thousands of chunks, and handing them all over at once
+ * means the model tokenises and holds the lot simultaneously — hundreds of
+ * megabytes to gigabytes of tensors for a single await.
+ */
+const BATCH_SIZE = 32;
+
+/**
  * Embed a batch, returning null entries instead of throwing when the model is
  * unreachable. Callers persist what they can and leave the rest for a backfill.
  */
-export async function embedSafely(texts: string[]): Promise<(Float32Array | null)[]> {
+export async function embedSafely(
+  texts: string[],
+  onProgress?: (done: number, total: number) => void,
+): Promise<(Float32Array | null)[]> {
   if (texts.length === 0) return [];
   try {
-    const vectors = await getEmbedder().embed(texts);
+    const embedder = getEmbedder();
+    const vectors: Float32Array[] = [];
+
+    for (let i = 0; i < texts.length; i += BATCH_SIZE) {
+      const slice = texts.slice(i, i + BATCH_SIZE);
+      vectors.push(...(await embedder.embed(slice)));
+      onProgress?.(Math.min(i + BATCH_SIZE, texts.length), texts.length);
+      // Let the server answer other requests between batches.
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+
     failure = null;
     return vectors;
   } catch (error) {
