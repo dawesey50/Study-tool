@@ -107,11 +107,19 @@ image well enough to match it to the caption underneath. No poppler dependency.
 Images that are too small, or that repeat across three or more pages, are
 dropped as slide furniture rather than treated as figures.
 
-**Notes are blocks, not a markdown blob.** They render as one continuous
-document but are stored as individually addressable blocks, because Phase 2 acts
-on a single block — explain this further, rewrite this, lock this. Blocks you
-write or edit are marked as yours so regeneration can be made to leave them
-alone.
+**You write in a document; it is stored as blocks.** The editor is one
+continuous page — type, press Enter, use `# ` for a heading or `- ` for a
+bullet, `/` to insert a callout. There is no block type to pick.
+
+Underneath, each top-level paragraph carries a stable id and is stored as its
+own row. That is not machinery that leaked into the design, it is the point: a
+block has an identity, an origin and a lock, which is what lets generation later
+be told to expand this paragraph, rewrite that one, and leave the two you wrote
+yourself completely alone. Exposing that in the interface was the mistake;
+keeping it in storage was not.
+
+Storage is markdown rather than the editor's own JSON, so it stays readable,
+diffable, and directly usable as both input and output for a model.
 
 **Vector search degrades rather than breaks.** sqlite-vec does the KNN when the
 extension loads; when it does not, the same interface falls back to brute-force

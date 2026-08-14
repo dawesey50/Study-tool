@@ -87,7 +87,7 @@ console.log(`\nRunning the Phase 1 journey against ${BASE}\n`);
 await step('the app loads', async () => {
   await page.goto(BASE, { waitUntil: 'networkidle' });
   // Scoped to the main column: "Modules" also labels a sidebar region.
-  await page.locator('main').getByRole('heading', { name: 'Modules' }).waitFor();
+  await page.locator('main').getByRole('heading', { name: 'Modules', exact: true }).waitFor();
 });
 
 await step('a module can be created', async () => {
@@ -164,27 +164,73 @@ await step('extracted figures render, not just link', async () => {
   if (!loaded) throw new Error('figure image did not load');
 });
 
-await step('a note can be written and survives a reload', async () => {
+await step('notes are written as one continuous document', async () => {
   await page.getByRole('button', { name: 'Notes' }).click();
-  await page.getByRole('button', { name: 'Start writing' }).click();
-  const editor = page.locator('.note-block .ProseMirror').first();
-  await editor.click();
-  await editor.type('Myelination increases conduction velocity via saltatory conduction.');
-  await page.waitForTimeout(1200); // let the debounced save land
+  const editor = page.locator('.prose-notes');
+  await editor.waitFor();
+  // The document always ends in an empty paragraph, so there is somewhere to type.
+  await page.locator('.prose-notes > p').last().click();
+  await page.keyboard.type('Myelination increases conduction velocity via saltatory conduction.');
+  await page.waitForTimeout(1600); // let the debounced save land
+  // The editor's own status line, not any other text containing "Saved".
+  await page.locator('span[aria-live="polite"]').filter({ hasText: /^Saved$/ }).waitFor({
+    timeout: 10_000,
+  });
+});
 
+await step('markdown shortcuts create real structure', async () => {
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('## Saltatory conduction');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('- Nodes of Ranvier');
+  await page.waitForTimeout(1800);
+
+  if ((await page.locator('.prose-notes h2', { hasText: 'Saltatory conduction' }).count()) !== 1) {
+    throw new Error('"## " did not become a heading');
+  }
+  if ((await page.locator('.prose-notes ul li').count()) < 1) {
+    throw new Error('"- " did not become a list');
+  }
+});
+
+await step('the document survives a reload, structure intact', async () => {
   await page.reload({ waitUntil: 'networkidle' });
+  await page.locator('.prose-notes').waitFor();
   await page.getByText(/Myelination increases conduction velocity/).waitFor({ timeout: 10_000 });
+  if ((await page.locator('.prose-notes h2', { hasText: 'Saltatory conduction' }).count()) !== 1) {
+    throw new Error('the heading did not survive the round trip through storage');
+  }
+  if ((await page.locator('.prose-notes ul li').count()) < 1) {
+    throw new Error('the list did not survive the round trip through storage');
+  }
+});
+
+await step('free typing still produces addressable blocks', async () => {
+  // The point of the whole design: one document to write in, real blocks
+  // underneath for locking and, later, targeted regeneration.
+  const sectionId = page.url().split('/sections/')[1];
+  const blocks = await page.evaluate(
+    (id) => fetch(`/api/sections/${id}/notes`).then((r) => r.json()),
+    sectionId,
+  );
+  const types = blocks.map((block) => block.type);
+  if (!types.includes('heading')) throw new Error(`no heading block stored: ${types.join(', ')}`);
+  if (!types.includes('list')) throw new Error(`no list block stored: ${types.join(', ')}`);
+  if (!blocks.every((block) => block.id)) throw new Error('a block has no id');
 });
 
 await step('locking a block makes it read-only', async () => {
   await page.getByText(/Myelination increases conduction velocity/).click();
-  await page.getByRole('button', { name: 'Lock', exact: true }).first().click();
+  await page.getByRole('button', { name: /Lock this block/ }).click();
   await page.getByText('locked', { exact: true }).first().waitFor({ timeout: 10_000 });
-  const editable = await page
-    .locator('.note-block .ProseMirror')
-    .first()
-    .evaluate((el) => el.getAttribute('contenteditable'));
-  if (editable !== 'false') throw new Error(`expected contenteditable=false, got ${editable}`);
+  // The document as a whole stays editable — only the locked block rejects
+  // edits — so prove it by trying to type into it and checking nothing changed.
+  const before = await page.locator('.prose-notes').innerText();
+  await page.getByText(/Myelination increases conduction velocity/).click();
+  await page.keyboard.type('XXX');
+  await page.waitForTimeout(400);
+  const after = await page.locator('.prose-notes').innerText();
+  if (before !== after) throw new Error('a locked block accepted an edit');
 });
 
 await step('search finds the note and the slide behind it', async () => {

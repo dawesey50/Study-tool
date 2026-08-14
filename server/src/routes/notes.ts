@@ -37,6 +37,7 @@ export async function noteRoutes(app: FastifyInstance): Promise<void> {
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const body = z
       .object({
+        id: z.string().uuid().optional(),
         type: z.enum(BLOCK_TYPES).default('prose'),
         markdown: z.string().default(''),
         position: z.number().int().min(0).optional(),
@@ -50,8 +51,12 @@ export async function noteRoutes(app: FastifyInstance): Promise<void> {
     const section = db.select().from(schema.sections).where(eq(schema.sections.id, id)).get();
     if (!section) return reply.code(404).send({ error: 'Section not found' });
 
-    reply.code(201);
-    return publicBlock(await createBlock({ sectionId: id, ...body }));
+    try {
+      reply.code(201);
+      return publicBlock(await createBlock({ sectionId: id, ...body }));
+    } catch (error) {
+      return reply.code(409).send({ error: (error as Error).message });
+    }
   });
 
   app.patch('/api/notes/:id', async (request, reply) => {

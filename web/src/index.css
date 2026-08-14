@@ -58,9 +58,17 @@
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   }
 
-  /* One consistent focus ring everywhere, and only for keyboard users. */
-  :focus-visible {
+  /*
+   * One consistent focus ring everywhere, and only for keyboard users. Text
+   * surfaces are excluded: a ring drawn around a whole page of prose says
+   * nothing useful, and the caret already shows where you are.
+   */
+  :focus-visible:not([contenteditable]) {
     @apply outline-none ring-2 ring-accent/60 ring-offset-1 ring-offset-canvas;
+  }
+
+  [contenteditable]:focus-visible {
+    @apply outline-none;
   }
 
   ::selection {
@@ -155,46 +163,97 @@
 }
 
 /*
- * The note editor. Set at a comfortable reading measure with generous leading,
- * because this is the surface you stare at for hours.
+ * The note editor is one continuous document, not a stack of boxes. It should
+ * read like a page: a comfortable measure, generous leading, and no chrome
+ * around individual paragraphs — the block structure underneath is storage,
+ * and storage is not something you should have to look at while writing.
  */
-.note-block .ProseMirror {
-  @apply min-h-[1.75rem] leading-[1.7] outline-none;
+.prose-notes {
+  @apply min-h-[24rem] text-[0.975rem] leading-[1.75];
 }
 
-.note-block .ProseMirror p {
-  @apply my-1;
+.prose-notes > * + * {
+  @apply mt-3;
 }
 
-.note-block .ProseMirror ul {
-  @apply my-1 list-disc space-y-1 pl-5 marker:text-faint;
+.prose-notes h1 {
+  @apply mt-6 text-2xl font-semibold tracking-tight first:mt-0;
 }
 
-.note-block .ProseMirror ol {
-  @apply my-1 list-decimal space-y-1 pl-5 marker:text-faint;
+.prose-notes h2 {
+  @apply mt-6 text-xl font-semibold tracking-tight first:mt-0;
 }
 
-.note-block .ProseMirror h1 {
-  @apply mb-1 mt-2 text-xl font-semibold tracking-tight;
+.prose-notes h3 {
+  @apply mt-5 text-base font-semibold first:mt-0;
 }
 
-.note-block .ProseMirror h2 {
-  @apply mb-1 mt-2 text-lg font-semibold tracking-tight;
+.prose-notes ul {
+  @apply list-disc space-y-1 pl-6 marker:text-faint;
 }
 
-.note-block .ProseMirror h3 {
-  @apply mb-1 mt-2 text-base font-semibold;
+.prose-notes ol {
+  @apply list-decimal space-y-1 pl-6 marker:text-faint;
 }
 
-.note-block .ProseMirror code {
+.prose-notes li > ul,
+.prose-notes li > ol {
+  @apply mt-1;
+}
+
+.prose-notes code {
   @apply rounded bg-line/60 px-1 py-0.5 font-mono text-[0.85em];
 }
 
-.note-block .ProseMirror blockquote {
-  @apply border-l-2 border-line pl-3 italic text-muted;
+.prose-notes pre {
+  @apply overflow-x-auto rounded-lg border border-line bg-canvas p-3 font-mono text-xs leading-relaxed;
 }
 
-.note-block .ProseMirror p.is-editor-empty:first-child::before {
+.prose-notes pre code {
+  @apply bg-transparent p-0;
+}
+
+.prose-notes hr {
+  @apply my-6 border-line;
+}
+
+/*
+ * Extra knowledge is visually distinct on purpose: the spec is explicit that
+ * beyond-the-lecture material must never be mistaken for examinable content.
+ */
+.prose-notes blockquote {
+  @apply rounded-r-lg border-l-[3px] py-2 pl-4 pr-3;
+}
+
+.prose-notes blockquote[data-variant='callout'] {
+  @apply border-flag bg-flag-soft/50;
+}
+
+.prose-notes blockquote[data-variant='summary'] {
+  @apply border-accent bg-accent-soft/50;
+}
+
+.prose-notes blockquote::before {
+  @apply mb-1 block text-2xs font-semibold uppercase tracking-wider text-muted;
+}
+
+.prose-notes blockquote[data-variant='callout']::before {
+  content: 'Extra knowledge — beyond the lecture';
+}
+
+.prose-notes blockquote[data-variant='summary']::before {
+  content: 'Summary';
+}
+
+/* A locked block is visibly not yours to type in. */
+.prose-notes [data-block-locked='true'] {
+  @apply opacity-70;
+}
+
+.prose-notes p.is-empty:first-child::before,
+.prose-notes h1.is-empty::before,
+.prose-notes h2.is-empty::before,
+.prose-notes h3.is-empty::before {
   @apply pointer-events-none float-left h-0 text-faint;
   content: attr(data-placeholder);
 }

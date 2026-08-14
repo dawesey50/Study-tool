@@ -47,6 +47,11 @@ material:
   `replaceTree` preserves ids so attached notes survive a tree edit.
 - `vector.test.ts` — BLOB round-tripping, cosine, and nearest-neighbour
   ranking against whichever vector backend is active.
+- `web/test/blockMarkdown.test.ts` — that a section survives the trip from
+  storage into the editor and back unchanged. This one matters more than its
+  size suggests: it runs on every save, and a bug there does not crash
+  anything, it quietly rewrites your notes into something slightly wrong until
+  you notice weeks later.
 
 **API tests** (`api.test.ts`) drive the real Fastify app, the real SQLite file
 and the real ingestion pipeline through `app.inject()`. They upload the

@@ -39,12 +39,24 @@ export interface CreateBlockInput {
   conceptIds?: string[];
   sourceRefs?: string[];
   origin?: schema.NoteBlockOrigin;
+  /**
+   * The editor assigns block ids as you type, before anything is saved, so it
+   * can send one here rather than waiting for the server to mint it. Without
+   * that, a block created mid-sentence has no identity until the round trip
+   * completes, and the keystrokes in between have nowhere to land.
+   */
+  id?: string;
 }
 
 export async function createBlock(input: CreateBlockInput): Promise<NoteBlockRow> {
   const db = getDb();
-  const id = newId();
+  const id = input.id ?? newId();
   const position = input.position ?? nextPosition(input.sectionId);
+
+  if (input.id) {
+    const clash = db.select().from(schema.noteBlocks).where(eq(schema.noteBlocks.id, id)).get();
+    if (clash) throw new Error(`A note block with id ${id} already exists`);
+  }
 
   db.transaction((tx) => {
     if (input.position !== undefined) shiftFrom(tx, input.sectionId, input.position);
