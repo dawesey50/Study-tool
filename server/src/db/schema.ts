@@ -366,6 +366,86 @@ export const scenarioSeeds = sqliteTable('scenario_seeds', {
 });
 
 // ---------------------------------------------------------------------------
+// Model calls: what was spent, and what can be reused
+// ---------------------------------------------------------------------------
+
+/** The tasks the routing table knows about. Adding one is a config change. */
+export type LlmTask =
+  | 'hierarchy_proposal'
+  | 'concept_extraction'
+  | 'transcript_cleanup'
+  | 'figure_caption'
+  | 'note_generation'
+  | 'section_rewrite'
+  | 'question_generation'
+  | 'examiner';
+
+export type LlmCallStatus = 'ok' | 'failed' | 'refused' | 'cached';
+
+/**
+ * One row per attempt, including the ones that failed and the ones served from
+ * cache. A ledger that only recorded successes would understate the bill,
+ * because a call that errors after generating output is still charged for.
+ *
+ * `costUsd` is null when no price is on file for that model rather than zero —
+ * an unpriced call must not read as a free one.
+ */
+export const llmCalls = sqliteTable(
+  'llm_calls',
+  {
+    id: text('id').primaryKey(),
+    /** Null for work that is not about one module, such as a connection test. */
+    moduleId: text('module_id').references(() => modules.id, { onDelete: 'set null' }),
+    /** Groups the calls made by one unit of work, for the per-run ceiling. */
+    runId: text('run_id'),
+    task: text('task').$type<LlmTask>().notNull(),
+    provider: text('provider').notNull(),
+    model: text('model').notNull(),
+    status: text('status').$type<LlmCallStatus>().notNull(),
+    inputTokens: integer('input_tokens').notNull().default(0),
+    outputTokens: integer('output_tokens').notNull().default(0),
+    cacheReadTokens: integer('cache_read_tokens').notNull().default(0),
+    cacheWriteTokens: integer('cache_write_tokens').notNull().default(0),
+    costUsd: real('cost_usd'),
+    latencyMs: integer('latency_ms'),
+    /** Hash of the request, so a repeat can be recognised. */
+    requestHash: text('request_hash').notNull(),
+    /** How many providers were tried before this one answered. */
+    attempt: integer('attempt').notNull().default(1),
+    error: text('error'),
+    createdAt: integer('created_at').notNull().default(now),
+  },
+  (t) => [
+    index('llm_calls_module_idx').on(t.moduleId, t.createdAt),
+    index('llm_calls_run_idx').on(t.runId),
+  ],
+);
+
+/**
+ * Responses keyed by a hash of everything that shaped them — task, model,
+ * prompt, images, schema. §12's cost argument depends on never paying twice for
+ * an unchanged input, and regeneration after an unrelated edit is the common
+ * case, not the rare one.
+ */
+export const llmCache = sqliteTable(
+  'llm_cache',
+  {
+    hash: text('hash').primaryKey(),
+    task: text('task').$type<LlmTask>().notNull(),
+    provider: text('provider').notNull(),
+    model: text('model').notNull(),
+    text: text('text').notNull(),
+    inputTokens: integer('input_tokens').notNull().default(0),
+    outputTokens: integer('output_tokens').notNull().default(0),
+    costUsd: real('cost_usd'),
+    hits: integer('hits').notNull().default(0),
+    createdAt: integer('created_at').notNull().default(now),
+    lastUsedAt: integer('last_used_at').notNull().default(now),
+  },
+  (t) => [index('llm_cache_task_idx').on(t.task)],
+);
+
+// ---------------------------------------------------------------------------
 // Vector index bookkeeping
 // ---------------------------------------------------------------------------
 

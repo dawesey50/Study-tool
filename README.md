@@ -14,14 +14,16 @@ accounts, no cloud, no lock-in.
 module's section hierarchy, ingest sources, and get an organised, searchable,
 correctly cited store of your material with figures pulled out of the PDFs.
 
-There is no AI generation yet. Notes are yours to write; concept extraction,
-generated notes, the question engine, spaced repetition and exam mode are
-Phases 2–5. The database schema already covers all of them, so those phases add
-behaviour rather than reshaping data.
+The model layer underneath Phase 2 is now in place — routing, cost accounting
+and the limits that stop a runaway — but nothing generates yet. Notes are still
+yours to write. Concept extraction, generated notes, the question engine,
+spaced repetition and exam mode are Phases 2–5, and the database schema already
+covers all of them, so those phases add behaviour rather than reshaping data.
 
 | Phase | Status |
 |---|---|
 | 1 — Schema, ingestion, section tree, block note editor, search | Done |
+| 2 — Model routing, cost accounting, spending limits | Done |
 | 2 — Concept extraction, note generation, coverage check, cross-referencing | Not started |
 | 3 — Question engine: blueprints, novelty gate, examiner pass | Not started |
 | 4 — FSRS scheduling at concept level, mastery rollup | Not started |
@@ -61,7 +63,21 @@ edits appear immediately. `npm run app` is the launcher without the
 double-click.
 
 Copy `.env.example` to `.env` if you want to change anything. Every setting has
-a working default, so this is optional.
+a working default, so this is optional — except an API key, which nothing can
+generate without.
+
+### API keys
+
+Put at least one of `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` or `GROQ_API_KEY` in
+`.env`. Everything already in the system works without any of them: search,
+figures, citations and your own notes need no model at all. **Settings → Models
+and spend** shows which keys it found, which model each task will actually run,
+and a **Test connection** button that makes one short call so you find out a key
+is wrong before a long job does.
+
+Prices for Claude models are built in. If you add a Gemini or Groq key, put
+their rates in `data/model-prices.json` — until you do, those calls are counted
+but recorded as unpriced rather than as free.
 
 ### First run and the embedding model
 
@@ -120,6 +136,30 @@ keeping it in storage was not.
 
 Storage is markdown rather than the editor's own JSON, so it stays readable,
 diffable, and directly usable as both input and output for a model.
+
+**No feature code knows a model name.** Everything goes through one call —
+`llm.complete({ task, prompt, images? })` — and the task is mapped to a model in
+`.env`. Moving note generation from Sonnet to Opus is a line in a config file
+and a restart, which is the whole reason the indirection exists.
+
+Each task has a fallback chain (Claude → Gemini → Groq, skipping any provider
+with no key), and one thing it deliberately will not fail over: a refusal. A
+provider being down is an outage worth routing around; a model declining is a
+decision, and quietly asking a different one is not a fix.
+
+**Spending has brakes, not just a meter.** Every call is written to a ledger
+with its tokens and its cost, aggregated per module and shown in Settings
+against the spec's ~£7 budget. But a meter only tells you afterwards, and the
+failure that costs real money is a coverage loop that never converges and runs
+all night. So there are three limits: a token ceiling on any one job, a monthly
+cap per module, and a maximum number of passes round any loop that regenerates
+until a condition is met. Each stops and says why. None of them silently
+switches to a cheaper model, because worse notes you did not ask for is the
+failure hardest to notice.
+
+Identical requests are served from a cache keyed on everything that shapes the
+answer, so regenerating a lecture after fixing one section does not pay for the
+parts that did not change.
 
 **Vector search degrades rather than breaks.** sqlite-vec does the KNN when the
 extension loads; when it does not, the same interface falls back to brute-force

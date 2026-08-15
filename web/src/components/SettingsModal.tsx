@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useTheme, type Theme } from '../lib/theme';
+import { LlmPanel } from './LlmPanel';
 import { Icon } from './ui/Icon';
 import { Modal } from './ui/Modal';
 import { useToast } from './ui/Toast';
@@ -40,7 +41,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
       onClose={onClose}
       title="Settings"
       description="Preferences are saved on this machine."
-      width="max-w-xl"
+      width="max-w-2xl"
       footer={
         <button className="btn" onClick={onClose}>
           Done
@@ -70,6 +71,8 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
             ))}
           </div>
         </section>
+
+        <LlmPanel />
 
         <section>
           <h3 className="label">This installation</h3>

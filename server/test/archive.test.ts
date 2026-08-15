@@ -22,7 +22,8 @@ process.env.DATA_DIR = tempDir;
 process.env.EMBEDDINGS_PROVIDER = 'hash';
 
 const { buildServer } = await import('../src/index.js');
-const { closeDb } = await import('../src/db/index.js');
+const { closeDb, getDb, schema } = await import('../src/db/index.js');
+const { monthlySpendUsd } = await import('../src/llm/budget.js');
 
 type App = Awaited<ReturnType<typeof buildServer>>;
 let app: App;
@@ -137,6 +138,26 @@ test('a module survives export, total data loss, and restore', async () => {
   assert.ok(before.figures.length > 0);
   const figureUrl = before.figures[0]!.url;
 
+  // Money already spent this month has to survive too. A restore that forgot
+  // it would silently hand the module a fresh monthly cap.
+  getDb()
+    .insert(schema.llmCalls)
+    .values({
+      id: 'archive-test-call',
+      moduleId,
+      runId: 'archive-test-run',
+      task: 'note_generation',
+      provider: 'anthropic',
+      model: 'claude-sonnet-5',
+      status: 'ok',
+      inputTokens: 40_000,
+      outputTokens: 8_000,
+      costUsd: 0.24,
+      requestHash: 'archive-test-hash',
+    })
+    .run();
+  assert.equal(monthlySpendUsd(moduleId), 0.24);
+
   // --- export --------------------------------------------------------------
   const exported = await app.inject({ method: 'GET', url: `/api/modules/${moduleId}/export` });
   assert.equal(exported.statusCode, 200);
@@ -216,6 +237,12 @@ test('a module survives export, total data loss, and restore', async () => {
     await app.inject({ method: 'GET', url: `/api/search?q=ATPase&moduleId=${moduleId}` }),
   );
   assert.ok(hits.length > 0, 'restored content is searchable');
+
+  assert.equal(
+    monthlySpendUsd(moduleId),
+    0.24,
+    'the spend ledger comes back, so the monthly cap is not quietly reset',
+  );
 });
 
 test('restoring over an existing module duplicates rather than overwrites', async () => {

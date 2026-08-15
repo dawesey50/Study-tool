@@ -38,6 +38,16 @@ interface Manifest {
   concepts: unknown[];
   conceptLinks: unknown[];
   questions: unknown[];
+  /**
+   * The spend ledger travels with the module. Without it a restore in the
+   * middle of a month would forget that £6 of the cap was already gone, and
+   * the brake would quietly reset itself at the worst possible moment.
+   *
+   * The response cache does not travel: it is keyed by a hash of the request,
+   * belongs to no module, and losing it costs a regeneration rather than a
+   * guarantee.
+   */
+  llmCalls?: unknown[];
 }
 
 /** BLOB columns cannot go into JSON, so they travel base64-encoded. */
@@ -122,6 +132,12 @@ export function exportModule(moduleId: string): ExportResult {
     .where(eq(schema.questions.moduleId, moduleId))
     .all();
 
+  const llmCalls = db
+    .select()
+    .from(schema.llmCalls)
+    .where(eq(schema.llmCalls.moduleId, moduleId))
+    .all();
+
   const manifest: Manifest = {
     format: FORMAT_VERSION,
     exportedAt: new Date().toISOString(),
@@ -135,6 +151,7 @@ export function exportModule(moduleId: string): ExportResult {
     concepts: encodeBlobs(concepts, ['embedding']),
     conceptLinks,
     questions: encodeBlobs(questions, ['embedding']),
+    llmCalls,
   };
 
   const files: Record<string, Uint8Array> = {
@@ -380,6 +397,22 @@ export function importModule(zipBuffer: Buffer): ImportResult {
           moduleId,
         })
         .run();
+    }
+
+    // Only on a clean restore. Restoring alongside a module that is still
+    // here makes a duplicate, and copying its ledger across would report the
+    // same money as spent twice — which is a worse error than losing history.
+    //
+    // Deleting a module leaves its ledger rows behind with no module (the
+    // money went out either way), so a clean restore re-attaches them rather
+    // than inserting a second copy.
+    if (!remapped) {
+      for (const row of (manifest.llmCalls ?? []) as Array<typeof schema.llmCalls.$inferSelect>) {
+        tx.insert(schema.llmCalls)
+          .values({ ...row, moduleId })
+          .onConflictDoUpdate({ target: schema.llmCalls.id, set: { moduleId } })
+          .run();
+      }
     }
   });
 

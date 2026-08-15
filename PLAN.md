@@ -5,9 +5,15 @@ Audited 15 August 2026 against `studytoolspec.md` (spec v2).
 > **Superseded by plan v2, and partly done.** Step 2 of v2 — "make it safe to
 > put a term's work in" — is complete: scanned PDFs are detected and reported,
 > a module exports to and restores from a single zip, uploads take many files at
-> once, and a running ingest can be cancelled. The findings below stand; the
+> once, and a running ingest can be cancelled. **Step 3 — the LLM layer — is
+> also complete**, which closes P1-4: `llm.complete({ task, prompt, images? })`
+> routes by config, falls back between providers, records every call's tokens
+> and cost per module, caches identical requests, and enforces the three limits
+> v2 added (a per-run token ceiling, a per-module monthly cap, and a maximum
+> number of passes round any regeneration loop). The findings below stand; the
 > ordering has been replaced by v2's, which makes the reality check on real
-> material a blocking first step.
+> material a blocking first step — and that step, Step 1, is still yours to run
+> and still blocks Step 4.
 
 **Method.** Every claim below was checked against the code or measured, not
 recalled. Feature presence was verified by finding the route or component that

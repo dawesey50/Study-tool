@@ -53,6 +53,16 @@ material:
   anything, it quietly rewrites your notes into something slightly wrong until
   you notice weeks later.
 
+- `llm.test.ts` — the model layer, all of it offline. A stub provider that
+  reports real-looking token counts stands in for the transport, so routing,
+  the ledger, the cache, the fallback chain and every spending limit are
+  exercised without a key. Three of those tests exist because the alternative
+  is proving them with a real bill: a run that will not stop at its token
+  ceiling, a month that will not stop at its cap, and a coverage loop that
+  never converges. The stub answers for whatever model it is asked for, so the
+  cost arithmetic is checked against the real price table rather than an
+  invented rate.
+
 **API tests** (`api.test.ts`) drive the real Fastify app, the real SQLite file
 and the real ingestion pipeline through `app.inject()`. They upload the
 fixture PDF as genuine multipart, ingest it, and assert on citations, figure
@@ -81,7 +91,9 @@ npm run test:e2e                                               # terminal 2
 One flowing journey rather than isolated cases: create a module, paste an
 outline, upload and ingest slides, map them to sections, read chunks with
 their slide citations, confirm figures actually render, write a note and
-reload, lock it, search, and drag a section to a new position.
+reload, lock it, search, drag a section to a new position, and open Settings to
+check that it says which model each task will run and where the spending limits
+sit.
 
 It fails on any browser console error, not just a failed assertion.
 
@@ -141,6 +153,28 @@ slide decks. The extractor pulls images from the PDF's own objects, which
 works well for normal decks, but a slide exported as one flat image per page
 will yield one full-page "figure" rather than the diagram on it. If a deck
 behaves that way you will see it immediately in the figures strip.
+
+## What to check the first time a real API key is in place
+
+Same caveat as the embedding model, for the same reason: every automated test
+runs against a stub provider, which proves the plumbing and nothing about a
+real API.
+
+1. **Press Test connection** in Settings → Models and spend. It makes one short
+   call and names the provider and model that answered. Do this before a long
+   job rather than after.
+2. **Read the routing table under "Which model runs what."** With only one key
+   set, tasks routed to a provider you have no key for quietly run on a
+   stand-in — the table says so in red, but it is worth knowing that concept
+   extraction is running on Claude rather than the cheaper Gemini route it was
+   designed for.
+3. **Check the Gemini and Groq model names** in `.env` against those providers'
+   own documentation before adding their keys. They rename models often, and
+   the defaults shipped here are a starting point, not a promise.
+4. **Watch the first module's spend** for a few generations, then judge whether
+   `LLM_MONTHLY_CAP_GBP` is set somewhere useful. The default is £15 against a
+   spec budget of about £7, which is deliberately loose — a cap that fires
+   during ordinary work teaches you to raise it without reading it.
 
 ## Common problems
 

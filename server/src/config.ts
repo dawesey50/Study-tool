@@ -68,6 +68,65 @@ export const config = {
     chunkOverlapChars: num('CHUNK_OVERLAP_CHARS', 180),
     figureMinDimension: num('FIGURE_MIN_DIMENSION', 90),
   },
+
+  llm: {
+    /**
+     * Which model runs which task. The spec's routing table, as config, so
+     * changing the note-generation model is an edit to .env rather than a code
+     * change. Each task falls back down the provider chain if its first choice
+     * cannot be reached.
+     */
+    models: {
+      hierarchyProposal: str('LLM_MODEL_HIERARCHY', 'claude-sonnet-5'),
+      conceptExtraction: str('LLM_MODEL_CONCEPTS', 'gemini-2.5-flash'),
+      transcriptCleanup: str('LLM_MODEL_TRANSCRIPT', 'gemini-2.5-flash'),
+      figureCaption: str('LLM_MODEL_FIGURE_CAPTION', 'gemini-2.5-flash'),
+      noteGeneration: str('LLM_MODEL_NOTES', 'claude-sonnet-5'),
+      sectionRewrite: str('LLM_MODEL_REWRITE', 'claude-sonnet-5'),
+      questionGeneration: str('LLM_MODEL_QUESTIONS', 'claude-sonnet-5'),
+      examiner: str('LLM_MODEL_EXAMINER', 'claude-haiku-4-5'),
+    },
+
+    /**
+     * What each provider runs when it is standing in for another. Exposed
+     * because provider model names change more often than this code will.
+     */
+    fallbackModels: {
+      anthropic: str('LLM_FALLBACK_MODEL_ANTHROPIC', 'claude-haiku-4-5'),
+      gemini: str('LLM_FALLBACK_MODEL_GEMINI', 'gemini-2.5-flash'),
+      groq: str('LLM_FALLBACK_MODEL_GROQ', 'llama-3.3-70b-versatile'),
+    },
+
+    keys: {
+      anthropic: str('ANTHROPIC_API_KEY', ''),
+      gemini: str('GEMINI_API_KEY', ''),
+      groq: str('GROQ_API_KEY', ''),
+    },
+
+    /** Forces every task onto one provider. 'stub' answers offline, for tests. */
+    forceProvider: str('LLM_PROVIDER', '') as '' | 'anthropic' | 'gemini' | 'groq' | 'stub',
+
+    /**
+     * The three brakes. Accounting says what was spent; these stop it being
+     * spent. A coverage loop that never converges is the failure mode they
+     * exist for — it costs real money overnight with nothing to show.
+     */
+    maxTokensPerRun: num('LLM_MAX_TOKENS_PER_RUN', 400_000),
+    monthlyCapGbpPerModule: num('LLM_MONTHLY_CAP_GBP', 15),
+    maxIterations: num('LLM_MAX_ITERATIONS', 3),
+
+    /** Ceiling on one response. Individual tasks ask for less. */
+    maxOutputTokens: num('LLM_MAX_OUTPUT_TOKENS', 8000),
+    /** Above this, stream, so a long answer cannot hit the request timeout. */
+    streamAboveTokens: num('LLM_STREAM_ABOVE_TOKENS', 8000),
+    timeoutMs: num('LLM_TIMEOUT_MS', 120_000),
+
+    /** Reuse identical answers rather than paying for them twice. */
+    cache: str('LLM_CACHE', 'on') !== 'off',
+
+    /** Only for display. The bill arrives in dollars; the budget is in pounds. */
+    usdToGbp: num('USD_TO_GBP', 0.79),
+  },
 } as const;
 
 export function ensureDirs(): void {

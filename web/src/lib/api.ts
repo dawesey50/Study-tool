@@ -172,6 +172,88 @@ export interface Health {
   dataDir: string;
 }
 
+export type LlmTask =
+  | 'hierarchy_proposal'
+  | 'concept_extraction'
+  | 'transcript_cleanup'
+  | 'figure_caption'
+  | 'note_generation'
+  | 'section_rewrite'
+  | 'question_generation'
+  | 'examiner';
+
+export interface LlmStatus {
+  providers: Array<{ name: string; configured: boolean }>;
+  forced: string | null;
+  routing: Array<{
+    task: LlmTask;
+    configuredModel: string;
+    configuredProvider: string;
+    effectiveModel: string | null;
+    effectiveProvider: string | null;
+    chain: string[];
+    available: boolean;
+    substituted: boolean;
+  }>;
+  caps: {
+    maxTokensPerRun: number;
+    monthlyCapGbpPerModule: number;
+    maxIterations: number;
+  };
+  cache: boolean;
+  usdToGbp: number;
+}
+
+export interface LlmModuleUsage {
+  moduleId: string;
+  title: string;
+  calls: number;
+  cachedCalls: number;
+  failedCalls: number;
+  unpricedCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  costGbp: number;
+  savedGbp: number;
+  capGbp: number;
+  remainingGbp: number;
+}
+
+export interface LlmUsage {
+  month: string;
+  capGbp: number;
+  usdToGbp: number;
+  totalGbp: number;
+  savedGbp: number;
+  calls: number;
+  cachedCalls: number;
+  unpricedCalls: number;
+  modules: LlmModuleUsage[];
+  byTask: Array<{ task: string; calls: number; costGbp: number }>;
+  recent: Array<{
+    createdAt: number;
+    task: string;
+    provider: string;
+    model: string;
+    status: string;
+    inputTokens: number;
+    outputTokens: number;
+    costGbp: number | null;
+    latencyMs: number | null;
+    error: string | null;
+  }>;
+}
+
+export interface LlmTestResult {
+  ok: boolean;
+  provider?: string;
+  model?: string;
+  text?: string;
+  costGbp?: number | null;
+  error?: string;
+}
+
 const BACKEND_UNREACHABLE =
   'Cannot reach the Processor server. Check the terminal running `npm run dev` — ' +
   'the server half should say "Server listening at http://127.0.0.1:5174".';
@@ -317,6 +399,12 @@ export const api = {
       chunks: { pending: number; embedded: number };
       noteBlocks: { pending: number; embedded: number };
     }>('/api/embeddings/backfill', { method: 'POST', body: JSON.stringify({}) }),
+
+  llmStatus: () => request<LlmStatus>('/api/llm/status'),
+  llmUsage: () => request<LlmUsage>('/api/llm/usage'),
+  llmTest: () => request<LlmTestResult>('/api/llm/test', { method: 'POST' }),
+  clearLlmCache: () =>
+    request<{ cleared: number }>('/api/llm/cache/clear', { method: 'POST' }),
 };
 
 /** Flatten a section tree into display order. */

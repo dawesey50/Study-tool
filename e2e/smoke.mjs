@@ -274,6 +274,20 @@ await step('dragging a section renumbers the tree', async () => {
   if (!after[1]?.startsWith('1.1')) throw new Error('children did not follow the moved parent');
 });
 
+await step('settings shows what each task will run, and what it has cost', async () => {
+  await page.keyboard.press('Control+,');
+  const dialog = page.getByRole('dialog');
+  await dialog.getByText('Models and spend', { exact: true }).waitFor({ timeout: 5000 });
+
+  // Which model runs which task has to be visible without reading .env.
+  await dialog.locator('summary', { hasText: 'Which model runs what' }).click();
+  await dialog.getByText(/claude-/).first().waitFor({ timeout: 5000 });
+
+  // And so do the brakes, since a cap you cannot see is not a reassurance.
+  await dialog.getByText(/passes round any loop/).waitFor({ timeout: 5000 });
+  await page.keyboard.press('Escape');
+});
+
 if (SHOTS) {
   fs.mkdirSync(SHOTS, { recursive: true });
   await page.screenshot({ path: path.join(SHOTS, 'final.png'), fullPage: true });
