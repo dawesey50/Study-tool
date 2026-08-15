@@ -1,15 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import {
-  api,
-  flattenSections,
-  type IngestJob,
-  type IngestResult,
-  type Source,
-  type SourceType,
-} from '../lib/api';
+import { api, flattenSections, type Source, type SourceType } from '../lib/api';
 import { Icon, type IconName } from '../components/ui/Icon';
+import { UploadQueueList, useUploadQueue } from '../components/UploadQueue';
 import { useConfirm } from '../components/ui/Confirm';
 import { useToast } from '../components/ui/Toast';
 
@@ -34,13 +28,9 @@ const ACCEPT = '.pdf,.docx,.txt,.md,.vtt,.srt';
 export function SourcesPage() {
   const { moduleId } = useParams<{ moduleId: string }>();
   const queryClient = useQueryClient();
-  const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [type, setType] = useState<SourceType>('slides');
-  const [title, setTitle] = useState('');
   const [dragging, setDragging] = useState(false);
-  const [lastIngest, setLastIngest] = useState<Record<string, IngestResult>>({});
-  const [job, setJob] = useState<IngestJob | null>(null);
 
   const { data: sources, isLoading } = useQuery({
     queryKey: ['sources', moduleId],
@@ -54,56 +44,7 @@ export function SourcesPage() {
     queryClient.invalidateQueries({ queryKey: ['modules'] });
   };
 
-  /**
-   * Upload, then follow the ingestion rather than waiting on one long request.
-   * A textbook takes minutes to read, and the rest of the app stays usable
-   * throughout — you can write notes in another section while it works.
-   */
-  const upload = useMutation({
-    mutationFn: async (file: File) => {
-      const form = new FormData();
-      form.append('type', type);
-      if (title.trim()) form.append('title', title.trim());
-      form.append('file', file);
-
-      const source = await api.uploadSource(moduleId!, form);
-      setTitle('');
-      if (fileRef.current) fileRef.current.value = '';
-      invalidate();
-
-      await api.ingestSource(source.id);
-
-      // Poll until it finishes. Slow enough not to be chatty, quick enough
-      // that the page bar still looks alive.
-      for (;;) {
-        await new Promise((resolve) => setTimeout(resolve, 600));
-        const status = await api.ingestStatus(source.id);
-        setJob(status);
-        if (status.phase === 'done' || status.phase === 'failed') return { source, status };
-      }
-    },
-    onSuccess: ({ source, status }) => {
-      setJob(null);
-      invalidate();
-
-      if (status.phase === 'failed' || !status.result) {
-        toast.error(`Could not read ${source.title}`, status.error ?? 'Ingestion failed.');
-        return;
-      }
-      const result = status.result;
-      setLastIngest((previous) => ({ ...previous, [source.id]: result }));
-      toast.success(
-        `Ingested ${source.title}`,
-        `${result.chunks} chunks, ${result.figures} figures, ${result.proposedSections} section${
-          result.proposedSections === 1 ? '' : 's'
-        } proposed.`,
-      );
-    },
-    onError: (error: Error) => {
-      setJob(null);
-      toast.error('Ingestion failed', error.message);
-    },
-  });
+  const queue = useUploadQueue(moduleId, invalidate);
 
   if (!moduleId) return null;
 
@@ -136,18 +77,10 @@ export function SourcesPage() {
               ))}
             </select>
           </div>
-          <div className="flex-1">
-            <label className="label" htmlFor="source-title">
-              Title <span className="font-normal normal-case text-faint">optional</span>
-            </label>
-            <input
-              id="source-title"
-              className="input"
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              placeholder="L07 Action Potentials"
-            />
-          </div>
+          <p className="flex-1 pb-1.5 text-xs leading-relaxed text-muted">
+            Each file is titled from its filename, and every file in one drop is filed under the
+            type chosen here. Rename or re-type any of them afterwards.
+          </p>
         </div>
 
         <label
@@ -159,34 +92,40 @@ export function SourcesPage() {
           onDrop={(event) => {
             event.preventDefault();
             setDragging(false);
-            const file = event.dataTransfer.files?.[0];
-            if (file) upload.mutate(file);
+            const files = [...(event.dataTransfer.files ?? [])];
+            if (files.length) void queue.add(files, type);
           }}
           className={`mt-3 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-4 py-8 text-center transition ${
             dragging ? 'border-accent bg-accent-soft' : 'border-line hover:border-accent/50 hover:bg-canvas'
-          } ${upload.isPending ? 'pointer-events-none opacity-60' : ''}`}
+          }`}
         >
           <input
             ref={fileRef}
             type="file"
             accept={ACCEPT}
+            multiple
             className="sr-only"
             onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) upload.mutate(file);
+              const files = [...(event.target.files ?? [])];
+              if (files.length) void queue.add(files, type);
+              if (fileRef.current) fileRef.current.value = '';
             }}
-            disabled={upload.isPending}
           />
           <Icon name="upload" size={22} className={dragging ? 'text-accent' : 'text-faint'} />
           <span className="mt-2 text-sm font-medium">
-            {upload.isPending ? 'Reading your document…' : 'Drop a file here, or click to choose'}
+            Drop files here, or click to choose
           </span>
           <span className="mt-1 text-xs text-muted">
-            {ACCEPT.replace(/\./g, '').replace(/,/g, ', ')} · ingestion starts straight away
+            {ACCEPT.replace(/\./g, '').replace(/,/g, ', ')} · drop a whole module at once and
+            walk away
           </span>
         </label>
 
-        {upload.isPending && <IngestProgress job={job} />}
+        <UploadQueueList
+          items={queue.items}
+          onCancel={queue.cancel}
+          onClear={queue.clearFinished}
+        />
       </div>
 
       <div className="mt-8 space-y-3">
@@ -211,27 +150,14 @@ export function SourcesPage() {
         )}
 
         {sources?.map((source) => (
-          <SourceCard
-            key={source.id}
-            source={source}
-            moduleId={moduleId}
-            ingest={lastIngest[source.id]}
-          />
+          <SourceCard key={source.id} source={source} moduleId={moduleId} />
         ))}
       </div>
     </div>
   );
 }
 
-function SourceCard({
-  source,
-  moduleId,
-  ingest,
-}: {
-  source: Source;
-  moduleId: string;
-  ingest: IngestResult | undefined;
-}) {
+function SourceCard({ source, moduleId }: { source: Source; moduleId: string }) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const confirm = useConfirm();
@@ -346,16 +272,6 @@ function SourceCard({
         </p>
       )}
 
-      {ingest && (
-        <p className="mt-3 text-xs text-muted">
-          {ingest.chunks} chunks · {ingest.figures} figures ·{' '}
-          {ingest.embedded ? 'embedded' : 'stored without vectors'} · {ingest.proposedSections}{' '}
-          section{ingest.proposedSections === 1 ? '' : 's'} proposed
-          {ingest.warnings.length > 0 && (
-            <span className="mt-1 block text-warn">{ingest.warnings.join(' ')}</span>
-          )}
-        </p>
-      )}
 
       <div className="mt-3 border-t border-line pt-3">
         <div className="flex items-center gap-2">
@@ -467,35 +383,3 @@ function StatusPill({ status }: { status: Source['status'] }) {
   return <span className={`chip ${styles[status]}`}>{status}</span>;
 }
 
-/**
- * Progress for an ingestion in flight.
- *
- * A long document used to give no feedback at all, which is indistinguishable
- * from a hang — and since the work blocked the server, the app really was
- * unusable while it ran. Both halves of that are fixed; this is the visible one.
- */
-function IngestProgress({ job }: { job: IngestJob | null }) {
-  const percent =
-    job && job.total > 0 ? Math.min(100, Math.round((job.done / job.total) * 100)) : null;
-
-  return (
-    <div className="mt-3 rounded-lg border border-line bg-canvas p-3">
-      <div className="flex items-baseline justify-between gap-3 text-xs">
-        <span className="font-medium">{job?.message ?? 'Starting…'}</span>
-        {percent !== null && <span className="tabular-nums text-muted">{percent}%</span>}
-      </div>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line">
-        <div
-          className={`h-full rounded-full bg-accent transition-[width] duration-300 ${
-            percent === null ? 'w-1/3 animate-pulse' : ''
-          }`}
-          style={percent === null ? undefined : { width: `${percent}%` }}
-        />
-      </div>
-      <p className="mt-2 text-2xs leading-relaxed text-muted">
-        You can carry on using the rest of the app while this runs — writing notes in another
-        section is fine.
-      </p>
-    </div>
-  );
-}

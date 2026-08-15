@@ -11,7 +11,7 @@ import { fromStoredPath, toStoredPath } from '../lib/paths.js';
 import { proposeSectionsForSource } from '../services/mapping.js';
 import { chunkBlocks } from './chunk.js';
 import { parseDocx } from './docx.js';
-import { parsePdf } from './pdf.js';
+import { IngestCancelled, parsePdf } from './pdf.js';
 import { parseTranscript } from './transcript.js';
 import type { ParseResult } from './types.js';
 
@@ -22,6 +22,8 @@ export interface IngestResult {
   embedded: boolean;
   proposedSections: number;
   warnings: string[];
+  /** The document was a scan, so almost no text could be read from it. */
+  likelyScanned: boolean;
 }
 
 /**
@@ -41,6 +43,7 @@ export type IngestProgress = (
 export async function ingestSource(
   sourceId: string,
   onProgress?: IngestProgress,
+  signal?: AbortSignal,
 ): Promise<IngestResult> {
   const db = getDb();
   const source = db.select().from(schema.sources).where(eq(schema.sources.id, sourceId)).get();
@@ -62,6 +65,7 @@ export async function ingestSource(
       figureDir,
       figurePrefix: slugify(source.title, 40),
       onProgress: (page, total) => onProgress?.('parsing', page, total),
+      ...(signal ? { signal } : {}),
     });
 
     // Clear any previous run before writing the new one.
@@ -72,6 +76,7 @@ export async function ingestSource(
     const chunkVectors = await embedSafely(
       chunks.map((c) => c.text),
       (done, total) => onProgress?.('embedding', done, total),
+      signal,
     );
     const embedded = chunkVectors.some((v) => v !== null);
 
@@ -148,8 +153,26 @@ export async function ingestSource(
       embedded,
       proposedSections: proposed.length,
       warnings: parsed.warnings,
+      likelyScanned: parsed.likelyScanned ?? false,
     };
   } catch (error) {
+    // Cancelling is a decision, not a fault. Clear the partial work and put the
+    // source back to "uploaded" so it reads as ready to try again rather than
+    // as something that went wrong.
+    if (error instanceof IngestCancelled || (error as Error)?.name === 'AbortError') {
+      db.delete(schema.chunks).where(eq(schema.chunks.sourceId, sourceId)).run();
+      db.delete(schema.figures).where(eq(schema.figures.sourceId, sourceId)).run();
+      fs.rmSync(path.join(config.mediaDir, 'figures', sourceId), {
+        recursive: true,
+        force: true,
+      });
+      db.update(schema.sources)
+        .set({ status: 'uploaded', error: null })
+        .where(eq(schema.sources.id, sourceId))
+        .run();
+      throw new IngestCancelled();
+    }
+
     const message = (error as Error).message;
     db.update(schema.sources)
       .set({ status: 'failed', error: message })

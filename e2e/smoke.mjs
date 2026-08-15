@@ -125,13 +125,13 @@ await step('a pasted outline becomes a numbered hierarchy', async () => {
   }
 });
 
-await step('slides upload and ingest', async () => {
+await step('slides upload and ingest through the queue', async () => {
   await page.getByRole('link', { name: /Sources for this module|Add sources/ }).first().click();
   await page.getByRole('heading', { name: 'Sources' }).waitFor();
-  await page.locator('#source-title').fill('L07 Action Potentials');
-  await page.locator('input[type=file]').setInputFiles(PDF);
-  // The ingest summary only renders once the pipeline has finished.
-  await page.getByText(/\d+ chunks · \d+ figures/).waitFor({ timeout: 90_000 });
+  // Files are titled from their filenames now, and several can go in at once.
+  await page.locator('input[type=file]').first().setInputFiles(PDF);
+  // The queue reports the result once the background job has finished.
+  await page.getByText(/\d+ chunks · \d+ figures/).first().waitFor({ timeout: 90_000 });
 });
 
 await step('the deck can be mapped to sections by hand', async () => {

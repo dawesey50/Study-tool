@@ -2,6 +2,13 @@
 
 Audited 15 August 2026 against `studytoolspec.md` (spec v2).
 
+> **Superseded by plan v2, and partly done.** Step 2 of v2 — "make it safe to
+> put a term's work in" — is complete: scanned PDFs are detected and reported,
+> a module exports to and restores from a single zip, uploads take many files at
+> once, and a running ingest can be cancelled. The findings below stand; the
+> ordering has been replaced by v2's, which makes the reality check on real
+> material a blocking first step.
+
 **Method.** Every claim below was checked against the code or measured, not
 recalled. Feature presence was verified by finding the route or component that
 implements it — a database table or a code comment mentioning something does

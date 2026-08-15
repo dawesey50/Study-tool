@@ -86,10 +86,20 @@ export function ModulePage() {
             {module.year ? `Year ${module.year}` : ''}
           </p>
         </div>
-        <Link className="btn btn-primary shrink-0" to={`/modules/${moduleId}/sources`}>
-          <Icon name="upload" size={15} />
-          Add sources
-        </Link>
+        <div className="flex shrink-0 gap-2">
+          <a
+            className="btn"
+            href={api.exportModuleUrl(moduleId!)}
+            title="Download this module — rows, embeddings and every file — as one zip"
+          >
+            <Icon name="file" size={15} />
+            Back up
+          </a>
+          <Link className="btn btn-primary" to={`/modules/${moduleId}/sources`}>
+            <Icon name="upload" size={15} />
+            Add sources
+          </Link>
+        </div>
       </header>
 
       <div className="mt-6 grid grid-cols-3 gap-3">

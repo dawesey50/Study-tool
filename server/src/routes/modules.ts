@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { getDb, schema } from '../db/index.js';
 import { newId } from '../lib/ids.js';
+import { exportModule, importModule } from '../services/archive.js';
 import {
   createSection,
   deleteSection,
@@ -96,6 +97,36 @@ export async function moduleRoutes(app: FastifyInstance): Promise<void> {
     const { id } = z.object({ id: z.string() }).parse(request.params);
     db.delete(schema.modules).where(eq(schema.modules.id, id)).run();
     return reply.code(204).send();
+  });
+
+  /**
+   * Download the module as a single .zip: its rows, its embeddings and every
+   * file they point at. This is the backup.
+   */
+  app.get('/api/modules/:id/export', async (request, reply) => {
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+    try {
+      const { filename, zip } = exportModule(id);
+      return reply
+        .header('content-type', 'application/zip')
+        .header('content-disposition', `attachment; filename="${filename}"`)
+        .send(zip);
+    } catch (error) {
+      return reply.code(404).send({ error: (error as Error).message });
+    }
+  });
+
+  /** Restore a module from an export. */
+  app.post('/api/modules/import', async (request, reply) => {
+    const file = await request.file();
+    if (!file) return reply.code(400).send({ error: 'Expected a .zip export' });
+
+    const buffer = await file.toBuffer();
+    try {
+      return importModule(buffer);
+    } catch (error) {
+      return reply.code(422).send({ error: (error as Error).message });
+    }
   });
 
   // --- Sections -------------------------------------------------------------

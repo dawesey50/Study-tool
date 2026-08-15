@@ -15,7 +15,14 @@ import { ingestSource, type IngestResult } from './index.js';
  * `resetInterruptedIngests` below rather than by a queue.
  */
 
-export type IngestPhase = 'queued' | 'parsing' | 'embedding' | 'mapping' | 'done' | 'failed';
+export type IngestPhase =
+  | 'queued'
+  | 'parsing'
+  | 'embedding'
+  | 'mapping'
+  | 'done'
+  | 'failed'
+  | 'cancelled';
 
 export interface IngestJob {
   sourceId: string;
@@ -31,14 +38,32 @@ export interface IngestJob {
 }
 
 const jobs = new Map<string, IngestJob>();
+/** One controller per running job, so a cancel can reach into the pipeline. */
+const controllers = new Map<string, AbortController>();
 
 export function getJob(sourceId: string): IngestJob | undefined {
   return jobs.get(sourceId);
 }
 
+const FINISHED: IngestPhase[] = ['done', 'failed', 'cancelled'];
+
 export function isRunning(sourceId: string): boolean {
   const job = jobs.get(sourceId);
-  return job !== undefined && job.phase !== 'done' && job.phase !== 'failed';
+  return job !== undefined && !FINISHED.includes(job.phase);
+}
+
+/**
+ * Ask a running ingest to stop. It halts at the next page or embedding batch,
+ * and whatever it had written so far is discarded — a half-read document is
+ * worse than none, because later phases cannot tell it is incomplete.
+ */
+export function cancelIngest(sourceId: string): boolean {
+  const controller = controllers.get(sourceId);
+  if (!controller || !isRunning(sourceId)) return false;
+  controller.abort();
+  const job = jobs.get(sourceId);
+  if (job) job.message = 'Cancelling…';
+  return true;
 }
 
 /**
@@ -59,6 +84,7 @@ export function startIngest(sourceId: string): IngestJob {
     startedAt: Date.now(),
   };
   jobs.set(sourceId, job);
+  controllers.set(sourceId, new AbortController());
 
   // Deliberately not awaited: the caller responds straight away.
   void run(job);
@@ -67,12 +93,16 @@ export function startIngest(sourceId: string): IngestJob {
 
 async function run(job: IngestJob): Promise<void> {
   try {
-    const result = await ingestSource(job.sourceId, (phase, done, total) => {
-      job.phase = phase;
-      job.done = done;
-      job.total = total;
-      job.message = describe(phase, done, total);
-    });
+    const result = await ingestSource(
+      job.sourceId,
+      (phase, done, total) => {
+        job.phase = phase;
+        job.done = done;
+        job.total = total;
+        job.message = describe(phase, done, total);
+      },
+      controllers.get(job.sourceId)?.signal,
+    );
 
     job.phase = 'done';
     job.result = result;
@@ -80,10 +110,14 @@ async function run(job: IngestJob): Promise<void> {
     job.finishedAt = Date.now();
     job.message = `${result.chunks} chunks, ${result.figures} figures`;
   } catch (error) {
-    job.phase = 'failed';
-    job.error = (error as Error).message;
+    const cancelled =
+      (error as Error)?.name === 'IngestCancelled' || (error as Error)?.name === 'AbortError';
+    job.phase = cancelled ? 'cancelled' : 'failed';
     job.finishedAt = Date.now();
-    job.message = 'Ingestion failed';
+    job.message = cancelled ? 'Cancelled' : 'Ingestion failed';
+    if (!cancelled) job.error = (error as Error).message;
+  } finally {
+    controllers.delete(job.sourceId);
   }
 }
 

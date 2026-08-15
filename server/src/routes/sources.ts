@@ -6,7 +6,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { config } from '../config.js';
 import { getDb, schema } from '../db/index.js';
-import { getJob, startIngest } from '../ingest/jobs.js';
+import { cancelIngest, getJob, startIngest } from '../ingest/jobs.js';
 import { newId } from '../lib/ids.js';
 import { fromStoredPath, storedPath, toMediaUrl } from '../lib/paths.js';
 import { listMappings, proposeSectionsForSource } from '../services/mapping.js';
@@ -86,7 +86,12 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
 
       if (part.file.truncated) {
         fs.rmSync(absolutePath, { force: true });
-        rejection = { code: 413, error: 'File exceeds the upload size limit' };
+        rejection = {
+          code: 413,
+          error:
+            `"${part.filename}" is larger than the ${config.maxUploadMb} MB limit. ` +
+            'Raise MAX_UPLOAD_MB in .env and restart if you need to ingest something bigger.',
+        };
         continue;
       }
 
@@ -175,6 +180,14 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
 
     reply.code(202);
     return startIngest(id);
+  });
+
+  /** Stop an ingestion that is running. */
+  app.delete('/api/sources/:id/ingest', async (request, reply) => {
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+    const stopped = cancelIngest(id);
+    if (!stopped) return reply.code(409).send({ error: 'Nothing is being ingested for this source' });
+    return { cancelling: true };
   });
 
   /** Follow an ingestion in progress. */

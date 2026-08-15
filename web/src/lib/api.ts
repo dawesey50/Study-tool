@@ -136,9 +136,18 @@ export interface IngestResult {
   embedded: boolean;
   proposedSections: number;
   warnings: string[];
+  /** The document was a scan, so almost no text could be read from it. */
+  likelyScanned: boolean;
 }
 
-export type IngestPhase = 'queued' | 'parsing' | 'embedding' | 'mapping' | 'done' | 'failed';
+export type IngestPhase =
+  | 'queued'
+  | 'parsing'
+  | 'embedding'
+  | 'mapping'
+  | 'done'
+  | 'failed'
+  | 'cancelled';
 
 /** Ingestion runs in the background; this is how its progress is followed. */
 export interface IngestJob {
@@ -225,6 +234,19 @@ export const api = {
   createModule: (body: { title: string; code?: string; year?: number }) =>
     request<Module>('/api/modules', { method: 'POST', body: JSON.stringify(body) }),
   deleteModule: (id: string) => request<void>(`/api/modules/${id}`, { method: 'DELETE' }),
+  /** The export is a file download, so it goes through the browser directly. */
+  exportModuleUrl: (id: string) => `/api/modules/${id}/export`,
+  importModule: (form: FormData) =>
+    request<{
+      moduleId: string;
+      title: string;
+      sections: number;
+      sources: number;
+      chunks: number;
+      noteBlocks: number;
+      missingFiles: string[];
+      remapped: boolean;
+    }>('/api/modules/import', { method: 'POST', body: form }),
 
   getSections: (moduleId: string) => request<SectionNode[]>(`/api/modules/${moduleId}/sections`),
   replaceTree: (moduleId: string, tree: unknown[]) =>
@@ -252,6 +274,8 @@ export const api = {
   /** Starts ingestion and returns immediately; follow it with ingestStatus. */
   ingestSource: (id: string) => request<IngestJob>(`/api/sources/${id}/ingest`, { method: 'POST' }),
   ingestStatus: (id: string) => request<IngestJob>(`/api/sources/${id}/ingest`),
+  cancelIngest: (id: string) =>
+    request<{ cancelling: boolean }>(`/api/sources/${id}/ingest`, { method: 'DELETE' }),
   getChunks: (id: string) => request<Chunk[]>(`/api/sources/${id}/chunks`),
   setSourceSections: (id: string, sectionIds: string[]) =>
     request<SectionMapping[]>(`/api/sources/${id}/sections`, {

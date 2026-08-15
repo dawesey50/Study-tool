@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Icon } from '../components/ui/Icon';
@@ -20,6 +20,32 @@ export function ModulesPage() {
   const [code, setCode] = useState('');
 
   const { data: modules, isLoading } = useQuery({ queryKey: ['modules'], queryFn: api.listModules });
+
+  const restoreRef = useRef<HTMLInputElement>(null);
+
+  const restore = useMutation({
+    mutationFn: (file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      return api.importModule(form);
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries();
+      toast.success(
+        result.remapped ? `Restored as "${result.title} (restored)"` : `Restored ${result.title}`,
+        [
+          `${result.sections} sections, ${result.sources} sources, ${result.noteBlocks} note blocks.`,
+          result.missingFiles.length
+            ? `${result.missingFiles.length} file(s) were missing from the archive.`
+            : '',
+        ]
+          .filter(Boolean)
+          .join(' '),
+      );
+      navigate(`/modules/${result.moduleId}`);
+    },
+    onError: (error: Error) => toast.error('Could not restore that backup', error.message),
+  });
 
   const create = useMutation({
     mutationFn: () =>
@@ -81,6 +107,31 @@ export function ModulesPage() {
           </button>
         </div>
       </form>
+
+      <div className="mt-3 flex items-center gap-3">
+        <input
+          ref={restoreRef}
+          type="file"
+          accept=".zip"
+          className="sr-only"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) restore.mutate(file);
+            if (restoreRef.current) restoreRef.current.value = '';
+          }}
+        />
+        <button
+          className="btn"
+          onClick={() => restoreRef.current?.click()}
+          disabled={restore.isPending}
+        >
+          <Icon name="refresh" size={14} />
+          {restore.isPending ? 'Restoring…' : 'Restore from a backup'}
+        </button>
+        <span className="text-xs text-muted">
+          Back up any module from its own page. A backup is one zip holding everything.
+        </span>
+      </div>
 
       <div className="mt-8 space-y-2">
         {isLoading && (

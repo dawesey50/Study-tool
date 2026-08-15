@@ -26,6 +26,14 @@ function loadPdfjs(): Promise<PdfjsModule> {
   return pdfjsPromise;
 }
 
+/** Thrown when the user cancels; handled rather than reported as a failure. */
+export class IngestCancelled extends Error {
+  constructor() {
+    super('Ingestion cancelled');
+    this.name = 'IngestCancelled';
+  }
+}
+
 export interface PdfParseOptions {
   /** Where extracted figures are written. */
   figureDir: string;
@@ -35,6 +43,8 @@ export interface PdfParseOptions {
   treatPagesAsSlides: boolean;
   /** Reports page-by-page progress, so a long textbook is not a silent wait. */
   onProgress?: (page: number, total: number) => void;
+  /** Checked between pages, so a cancelled ingest stops promptly. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -113,6 +123,11 @@ export async function parsePdf(filePath: string, options: PdfParseOptions): Prom
     page.cleanup();
     options.onProgress?.(pageNo, doc.numPages);
 
+    if (options.signal?.aborted) {
+      await doc.destroy();
+      throw new IngestCancelled();
+    }
+
     // Hand the event loop back between pages. Parsing a long document is
     // minutes of CPU work, and without this the server answers nothing else in
     // the meantime — which made the whole app look frozen during an ingest.
@@ -120,9 +135,43 @@ export async function parsePdf(filePath: string, options: PdfParseOptions): Prom
   }
 
   const figures = finaliseFigures(collector, warnings);
+  const pageCount = doc.numPages;
   await doc.destroy();
 
-  return { blocks, figures, pageCount: doc.numPages, warnings };
+  const likelyScanned = looksScanned(blocks, collector, pageCount);
+  if (likelyScanned) {
+    warnings.unshift(
+      'This PDF appears to be a scan: its pages are images with little or no ' +
+        'selectable text. Very little could be read from it, so notes, questions ' +
+        'and search will have almost nothing to work with. It needs OCR.',
+    );
+  }
+
+  return { blocks, figures, pageCount, warnings, likelyScanned };
+}
+
+/**
+ * A scan is a document whose pages are pictures of text.
+ *
+ * Judged on the share of pages carrying real text rather than on the total,
+ * because a scanned book often has a born-digital cover or contents page that
+ * would otherwise mask the problem.
+ */
+function looksScanned(
+  blocks: ParsedBlock[],
+  collector: FigureCollector,
+  pageCount: number,
+): boolean {
+  if (pageCount === 0) return false;
+
+  const pagesWithText = new Set(
+    blocks.filter((block) => block.text.trim().length > 40).map((block) => block.pageNo),
+  ).size;
+  const pagesWithImages = new Set([...collector.pagesByHash.values()].flatMap((pages) => [...pages]))
+    .size;
+
+  // Images on most pages, text on almost none.
+  return pagesWithText / pageCount < 0.2 && pagesWithImages / pageCount > 0.5;
 }
 
 // ---------------------------------------------------------------------------

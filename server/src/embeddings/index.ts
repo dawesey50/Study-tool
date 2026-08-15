@@ -67,6 +67,7 @@ const BATCH_SIZE = 32;
 export async function embedSafely(
   texts: string[],
   onProgress?: (done: number, total: number) => void,
+  signal?: AbortSignal,
 ): Promise<(Float32Array | null)[]> {
   if (texts.length === 0) return [];
   try {
@@ -74,6 +75,7 @@ export async function embedSafely(
     const vectors: Float32Array[] = [];
 
     for (let i = 0; i < texts.length; i += BATCH_SIZE) {
+      signal?.throwIfAborted();
       const slice = texts.slice(i, i + BATCH_SIZE);
       vectors.push(...(await embedder.embed(slice)));
       onProgress?.(Math.min(i + BATCH_SIZE, texts.length), texts.length);
@@ -84,6 +86,11 @@ export async function embedSafely(
     failure = null;
     return vectors;
   } catch (error) {
+    // A cancellation is not a provider failure. Without this it would be
+    // swallowed here and reported as "the model is unavailable", and the
+    // ingest would carry on storing everything without vectors.
+    if ((error as Error)?.name === 'AbortError') throw error;
+
     const message = (error as Error).message;
     if (failure !== message) {
       console.warn(

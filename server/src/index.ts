@@ -78,7 +78,7 @@ export async function buildServer(options: BuildOptions = {}) {
   // Single user on localhost, so CORS only needs to admit the Vite dev server.
   await app.register(cors, { origin: true });
   await app.register(multipart, {
-    limits: { fileSize: 200 * 1024 * 1024, files: 1 },
+    limits: { fileSize: config.maxUploadMb * 1024 * 1024, files: 1 },
   });
 
   // Extracted figures are served straight off disk.

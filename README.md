@@ -145,5 +145,14 @@ understanding.
 
 ## Backing up
 
-Copy the `data/` folder. It is the whole system: `processor.db` plus the media
-files it points at. A git repo or a synced folder both work.
+**Back up** on a module's page downloads it as a single `.zip` — its rows, its
+embeddings and every file they point at. **Restore from a backup** on the
+Modules page brings it back, and a restore onto a clean install reproduces the
+original exactly, identifiers included. Restoring a module that is still
+present makes a copy rather than merging, because a duplicate can be deleted
+and a silent overwrite cannot be undone.
+
+The archive is an ordinary zip, openable without this program.
+
+Copying the whole `data/` folder also works and is the way to move everything
+at once: it is `processor.db` plus the media beside it.

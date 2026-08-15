@@ -56,6 +56,13 @@ export const config = {
 
   vectorBackend: str('VECTOR_BACKEND', 'sqlite-vec') as 'sqlite-vec' | 'brute',
 
+  /**
+   * Largest single upload, in megabytes. Scanned textbooks are routinely
+   * hundreds of megabytes, and the old 200 MB ceiling rejected them with a
+   * message that did not say what the limit was.
+   */
+  maxUploadMb: num('MAX_UPLOAD_MB', 500),
+
   ingest: {
     chunkTargetChars: num('CHUNK_TARGET_CHARS', 1400),
     chunkOverlapChars: num('CHUNK_OVERLAP_CHARS', 180),
