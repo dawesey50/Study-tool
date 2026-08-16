@@ -96,8 +96,9 @@ export function RestorePoints({ moduleId }: { moduleId: string }) {
     }
 
     const confirmed = await confirm({
-      title: `Restore "${snapshot.label}"?`,
+      title: 'Restore this point?',
       message:
+        `Going back to "${snapshot.label}", saved ${when(snapshot.createdAt)}. ` +
         (losses.length ? `${losses.join('. ')}.` : 'Nothing has changed since — this is a no-op.') +
         ' The state you are replacing is saved first, so you can undo this.',
       confirmLabel: 'Restore',

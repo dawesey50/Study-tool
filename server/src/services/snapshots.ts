@@ -232,9 +232,12 @@ export async function restoreSnapshot(id: string): Promise<RestoreResult> {
 
   // Before undoing anything, record what is being undone. Without this a
   // mistaken restore would be the one action in the system with no way back.
+  // The label deliberately does not name the point being restored: undoing an
+  // undo would then nest that name inside itself, and the list already shows
+  // the time, scope and size, which is what you actually choose on.
   const undo = takeSnapshot({
     ...scope,
-    label: `Before restoring "${snapshot.label}"`,
+    label: 'Before an undo',
     reason: 'before_restore',
   });
 
