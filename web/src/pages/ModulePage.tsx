@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api, flattenSections } from '../lib/api';
+import { RestorePoints } from '../components/RestorePoints';
 import { Icon } from '../components/ui/Icon';
 import { Modal } from '../components/ui/Modal';
 import { useConfirm } from '../components/ui/Confirm';
@@ -150,6 +151,8 @@ export function ModulePage() {
           </ul>
         )}
       </section>
+
+      <RestorePoints moduleId={moduleId!} />
 
       <Modal
         open={outlineOpen}

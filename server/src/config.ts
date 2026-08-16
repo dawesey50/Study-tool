@@ -63,6 +63,13 @@ export const config = {
    */
   maxUploadMb: num('MAX_UPLOAD_MB', 500),
 
+  /**
+   * Restore points kept per module. They cost a copy of the notes' text and
+   * nothing else, but unbounded history would grow with every generation run
+   * and nobody reaches for one from forty runs ago.
+   */
+  snapshotsKept: num('SNAPSHOTS_KEPT', 20),
+
   ingest: {
     chunkTargetChars: num('CHUNK_TARGET_CHARS', 1400),
     chunkOverlapChars: num('CHUNK_OVERLAP_CHARS', 180),

@@ -366,6 +366,53 @@ export const scenarioSeeds = sqliteTable('scenario_seeds', {
 });
 
 // ---------------------------------------------------------------------------
+// Restore points
+// ---------------------------------------------------------------------------
+
+export type SnapshotReason = 'before_generation' | 'before_restore' | 'manual';
+
+/**
+ * A copy of a scope's notes, taken before anything is about to rewrite them.
+ *
+ * `locked` and `user_written` are the promise that generation leaves your own
+ * writing alone, and that promise has never been tested against a real
+ * generator. The first time it is, is exactly when a restore point earns its
+ * keep — so one is taken automatically before any bulk run, and a restore
+ * itself takes one first, which makes the undo undoable.
+ *
+ * Notes only. Sources, figures and chunks are not at risk from a generation
+ * run, and copying them would make a restore point cost as much as a backup.
+ */
+export const noteSnapshots = sqliteTable(
+  'note_snapshots',
+  {
+    id: text('id').primaryKey(),
+    moduleId: text('module_id')
+      .notNull()
+      .references(() => modules.id, { onDelete: 'cascade' }),
+    /** Null when the snapshot covers the whole module. */
+    sectionId: text('section_id').references(() => sections.id, { onDelete: 'cascade' }),
+    label: text('label').notNull(),
+    reason: text('reason').$type<SnapshotReason>().notNull(),
+    blockCount: integer('block_count').notNull().default(0),
+    /** The captured rows. Embeddings are left out and rebuilt on restore. */
+    payload: json<{ version: number; noteBlocks: unknown[] }>('payload').notNull(),
+    /**
+     * Insertion order, and the only thing "most recent" is decided by.
+     *
+     * `created_at` is whole seconds like every other timestamp here, which is
+     * fine for display and useless for ordering: a run over twenty sections
+     * takes twenty snapshots inside one second, and pruning by timestamp would
+     * then keep an arbitrary few — possibly discarding the one wanted while
+     * keeping older ones.
+     */
+    seq: integer('seq').notNull(),
+    createdAt: integer('created_at').notNull().default(now),
+  },
+  (t) => [index('note_snapshots_module_idx').on(t.moduleId, t.seq)],
+);
+
+// ---------------------------------------------------------------------------
 // Model calls: what was spent, and what can be reused
 // ---------------------------------------------------------------------------
 

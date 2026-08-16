@@ -245,6 +245,27 @@ export interface LlmUsage {
   }>;
 }
 
+export type SnapshotReason = 'before_generation' | 'before_restore' | 'manual';
+
+export interface Snapshot {
+  id: string;
+  moduleId: string;
+  sectionId: string | null;
+  label: string;
+  reason: SnapshotReason;
+  blockCount: number;
+  seq: number;
+  createdAt: number;
+}
+
+export interface RestorePreview {
+  removed: number;
+  removedUserWritten: number;
+  removedLocked: number;
+  changed: number;
+  restored: number;
+}
+
 export interface LlmTestResult {
   ok: boolean;
   provider?: string;
@@ -415,6 +436,20 @@ export const api = {
       chunks: { pending: number; embedded: number };
       noteBlocks: { pending: number; embedded: number };
     }>('/api/embeddings/backfill', { method: 'POST', body: JSON.stringify({}) }),
+
+  listSnapshots: (moduleId: string) => request<Snapshot[]>(`/api/modules/${moduleId}/snapshots`),
+  takeSnapshot: (moduleId: string, body: { sectionId?: string; label?: string } = {}) =>
+    request<Snapshot>(`/api/modules/${moduleId}/snapshots`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  previewRestore: (id: string) => request<RestorePreview>(`/api/snapshots/${id}/preview`),
+  restoreSnapshot: (id: string) =>
+    request<{ moduleId: string; sectionId: string | null; blocks: number; undoSnapshotId: string }>(
+      `/api/snapshots/${id}/restore`,
+      { method: 'POST' },
+    ),
+  deleteSnapshot: (id: string) => request<void>(`/api/snapshots/${id}`, { method: 'DELETE' }),
 
   llmStatus: () => request<LlmStatus>('/api/llm/status'),
   llmUsage: () => request<LlmUsage>('/api/llm/usage'),

@@ -3,13 +3,12 @@
 Audited 15 August 2026 against `studytoolspec.md` (spec v2).
 
 > **Superseded by plan v2, and partly done.** Step 2 of v2 — "make it safe to
-> put a term's work in" — is four fifths done: scanned PDFs are detected and
-> reported, a module exports to and restores from a single zip, uploads take
-> many files at once, and a running ingest can be cancelled. **Its fifth item is
-> outstanding**: a snapshot taken automatically before any bulk regeneration, so
-> that the first time `locked` and `user_written` are tested against a real
-> generator there is a restore point. Nothing generates yet, so nothing is at
-> risk today — but this has to land before Step 5 does. **Step 3 — the LLM layer — is
+> put a term's work in" — is complete: scanned PDFs are detected and reported,
+> a module exports to and restores from a single zip, uploads take many files
+> at once, a running ingest can be cancelled, and a restore point is taken
+> automatically before anything rewrites notes in bulk — so the first time
+> `locked` and `user_written` are tested against a real generator, a bad run is
+> survivable. **Step 3 — the LLM layer — is
 > also complete**, which closes P1-4: `llm.complete({ task, prompt, images? })`
 > routes by config, falls back between providers, records every call's tokens
 > and cost per module, caches identical requests, and enforces the three limits

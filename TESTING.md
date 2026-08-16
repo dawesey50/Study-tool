@@ -53,6 +53,13 @@ material:
   on every save, and a bug there does not crash anything, it quietly rewrites
   your notes into something slightly wrong until you notice weeks later.
 
+- `snapshots.test.ts` — restore points. The central test simulates the failure
+  they exist for rather than waiting for it: it takes a restore point through
+  the same seam generation will use, then deletes and overwrites everything in
+  the section, and checks that going back really goes back — locks, authorship
+  and block identities included. It also covers the case that matters for
+  pruning, twenty snapshots inside one second, which is what a run over twenty
+  sections does.
 - `llm.test.ts` — the model layer, all of it offline. A stub provider that
   reports real-looking token counts stands in for the transport, so routing,
   the ledger, the cache, the fallback chain and every spending limit are

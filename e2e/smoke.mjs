@@ -293,6 +293,49 @@ await step('locking a block makes it read-only', async () => {
   if (before !== after) throw new Error('a locked block accepted an edit');
 });
 
+await step('a restore point brings destroyed notes back', async () => {
+  const sectionId = page.url().split('/sections/')[1];
+  const moduleId = page.url().split('/modules/')[1].split('/')[0];
+
+  await page.goto(`${BASE}/modules/${moduleId}`, { waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: 'Take one now' }).click();
+  await page.locator('li', { hasText: 'Taken by hand' }).first().waitFor({ timeout: 10_000 });
+
+  // Destroy the section's notes the way a bad generation run would.
+  const destroyed = await page.evaluate(async (id) => {
+    const blocks = await fetch(`/api/sections/${id}/notes`).then((r) => r.json());
+    for (const block of blocks) {
+      await fetch(`/api/notes/${block.id}`, { method: 'DELETE' });
+    }
+    return blocks.length;
+  }, sectionId);
+  if (destroyed === 0) throw new Error('there was nothing to destroy');
+
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.locator('li', { hasText: 'Taken by hand' }).first().getByRole('button', { name: 'Restore' }).click();
+
+  // The confirmation has to say what comes back before anything happens.
+  const dialog = page.getByRole('dialog');
+  await dialog.getByText(/come back/).waitFor({ timeout: 10_000 });
+  await dialog.getByRole('button', { name: 'Restore', exact: true }).click();
+
+  await page.waitForTimeout(1500);
+  const after = await page.evaluate(
+    (id) => fetch(`/api/sections/${id}/notes`).then((r) => r.json()),
+    sectionId,
+  );
+  if (after.length !== destroyed) {
+    throw new Error(`expected ${destroyed} blocks back, got ${after.length}`);
+  }
+  if (!after.some((block) => block.locked)) throw new Error('the lock did not come back');
+
+  await page.goto(`${BASE}/modules/${moduleId}/sections/${sectionId}`, {
+    waitUntil: 'networkidle',
+  });
+  await page.getByRole('button', { name: 'Notes' }).click();
+  await page.getByText(/Myelination increases conduction velocity/).waitFor({ timeout: 10_000 });
+});
+
 await step('search finds the note and the slide behind it', async () => {
   await page.getByPlaceholder(/Search everything/).fill('saltatory');
   await page.waitForTimeout(900);

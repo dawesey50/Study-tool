@@ -202,5 +202,16 @@ and a silent overwrite cannot be undone.
 
 The archive is an ordinary zip, openable without this program.
 
+**Restore points** are the smaller, faster thing beside it, on the same page.
+One holds a module's notes and nothing else, and one is saved automatically
+before anything rewrites notes in bulk. Restoring puts the notes back exactly —
+identities, locks and authorship included — and because that can delete work
+done since, the confirmation says how many blocks will go and how many of them
+you wrote yourself before it does anything. Restoring saves the state it is
+replacing first, so it is itself undoable.
+
+Use a restore point to undo a generation run; use a backup to survive losing
+the folder.
+
 Copying the whole `data/` folder also works and is the way to move everything
 at once: it is `processor.db` plus the media beside it.
