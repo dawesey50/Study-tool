@@ -10,7 +10,10 @@ Audited 15 August 2026 against `studytoolspec.md` (spec v2).
 > routes by config, falls back between providers, records every call's tokens
 > and cost per module, caches identical requests, and enforces the three limits
 > v2 added (a per-run token ceiling, a per-module monthly cap, and a maximum
-> number of passes round any regeneration loop). The findings below stand; the
+> number of passes round any regeneration loop). **P1-1 is closed too**: table,
+> figure and cross-reference are real editor nodes rather than block types that
+> degraded to plain prose, which had to happen before generation writes them
+> rather than after. The findings below stand; the
 > ordering has been replaced by v2's, which makes the reality check on real
 > material a blocking first step — and that step, Step 1, is still yours to run
 > and still blocks Step 4.
@@ -48,7 +51,7 @@ which is where the spec's two differentiators live — are not started.
 | §6.2 Coverage check and badge | **Not started** | Only referenced in comments |
 | §6.3 Note format config template | **Not started** | |
 | §6.4 Figure placement by similarity | **Not started** | Figures are extracted and listed, never placed |
-| §6.5 Cross-referencing instead of repeating | **Not started** | `crossref` block type exists but renders as plain prose |
+| §6.5 Cross-referencing instead of repeating | **Half** | The crossref block renders properly and resolves to a live section number; automatic ownership assignment is Step 4 |
 | §6.6 Editing and edit preservation | **Done** | Blocks carry origin and a lock; locked blocks reject edits |
 | §6.6 Section action toolbar | **Not started** | No "explain further", "rewrite", "go deeper" |
 | §7 Question engine | **Not started** | Tables exist; nothing populates them |
@@ -103,13 +106,16 @@ KaTeX and Mermaid are in `web/package.json` and imported nowhere. So the spec's
 while the download cost does. Either wire them up or remove them; shipping both
 the weight and the absence is the worst of both.
 
-### P1-1 — Block types that degrade to plain text
+### P1-1 — Block types that degrade to plain text — **fixed**
 
-`crossref`, `figure` and `table` are in the type union and the database, but the
-editor has no node for them, so they fall through to prose. §6.5's cross-
-reference block — the thing that stops notes repeating themselves — has nowhere
-to render. This needs solving *before* generation writes those blocks, not
-after.
+`crossref`, `figure` and `table` were in the type union and the database, but
+the editor had no node for them, so they fell through to prose. §6.5's cross-
+reference block — the thing that stops notes repeating themselves — had nowhere
+to render.
+
+All three are now real nodes, with the reference columns (`figure_id`,
+`target_section_id`) written on every save so "which blocks point at this
+section?" is a query rather than a scan of every note's text.
 
 ### P1-2 — No way to cancel a running ingest
 

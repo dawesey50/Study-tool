@@ -219,6 +219,66 @@ await step('free typing still produces addressable blocks', async () => {
   if (!blocks.every((block) => block.id)) throw new Error('a block has no id');
 });
 
+await step('a table, a figure and a cross-reference are real blocks', async () => {
+  const insert = async (query) => {
+    await page.locator('.prose-notes > p').last().click();
+    await page.keyboard.type(`/${query}`);
+    await page.waitForTimeout(250);
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(350);
+  };
+
+  await insert('table');
+  await page.locator('.prose-notes table th').first().waitFor({ timeout: 5000 });
+  await page.keyboard.type('Ion');
+
+  // A figure can only come from what ingestion actually extracted, so the
+  // picker lists this section's own figures rather than asking for a URL.
+  await insert('figure');
+  await page.getByRole('dialog').getByRole('button').filter({ has: page.locator('img') }).first().click();
+  await page.locator('.prose-notes figure img').first().waitFor({ timeout: 5000 });
+
+  // The cross-reference is stored by section id, never by number.
+  await insert('cross');
+  await page.getByRole('dialog').locator('li button').first().click();
+  await page.locator('.prose-notes aside[data-crossref]').first().waitFor({ timeout: 5000 });
+
+  await page.waitForTimeout(1800);
+
+  const sectionId = page.url().split('/sections/')[1];
+  const stored = await page.evaluate(
+    (id) => fetch(`/api/sections/${id}/notes`).then((r) => r.json()),
+    sectionId,
+  );
+  const types = stored.map((b) => b.type);
+  for (const wanted of ['table', 'figure', 'crossref']) {
+    if (!types.includes(wanted)) {
+      throw new Error(`no ${wanted} block stored: ${types.join(', ')}`);
+    }
+  }
+
+  // Both references land in their own columns, so later phases can ask which
+  // blocks point at a section without scanning every note's text.
+  const figureBlock = stored.find((b) => b.type === 'figure');
+  if (!figureBlock.figureId) throw new Error('a placed figure lost the figure it came from');
+  const crossrefBlock = stored.find((b) => b.type === 'crossref');
+  if (!crossrefBlock.targetSectionId) throw new Error('a cross-reference stored no target');
+
+  // The real test: they come back as nodes, not as the text of their own markup.
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.locator('.prose-notes table').first().waitFor({ timeout: 10_000 });
+  await page.locator('.prose-notes figure img').first().waitFor({ timeout: 10_000 });
+  const crossref = page.locator('.prose-notes aside[data-crossref]').first();
+  await crossref.waitFor({ timeout: 10_000 });
+
+  // And the crossref shows the target's live derived number, not a stored one.
+  const text = await crossref.innerText();
+  if (!/\d/.test(text)) throw new Error(`crossref did not resolve to a section: "${text}"`);
+  if ((await page.getByText('](section:').count()) > 0) {
+    throw new Error('a crossref rendered as its own markup');
+  }
+});
+
 await step('locking a block makes it read-only', async () => {
   await page.getByText(/Myelination increases conduction velocity/).click();
   await page.getByRole('button', { name: /Lock this block/ }).click();
@@ -243,6 +303,10 @@ await step('search finds the note and the slide behind it', async () => {
 await step('dragging a section renumbers the tree', async () => {
   await page.keyboard.press('Escape');
   const before = await sidebarNumbers(page);
+  // A cross-reference is stored by section id, so moving its target has to
+  // change the number it displays rather than leave a stale one behind.
+  const crossref = page.locator('.prose-notes aside[data-crossref]').first();
+  const crossrefBefore = (await crossref.count()) ? await crossref.innerText() : null;
 
   // Native HTML5 drag is not produced by synthetic mouse movement, so the
   // drag events are dispatched directly at the same handlers a real drag hits.
@@ -272,6 +336,13 @@ await step('dragging a section renumbers the tree', async () => {
   }
   // Its children must have come with it.
   if (!after[1]?.startsWith('1.1')) throw new Error('children did not follow the moved parent');
+
+  if (crossrefBefore !== null) {
+    const crossrefAfter = await crossref.innerText();
+    if (crossrefAfter === crossrefBefore) {
+      throw new Error(`the cross-reference kept a stale number: "${crossrefAfter}"`);
+    }
+  }
 });
 
 await step('settings shows what each task will run, and what it has cost', async () => {

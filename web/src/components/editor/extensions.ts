@@ -15,6 +15,9 @@ const BLOCK_NODES = [
   'blockquote',
   'codeBlock',
   'horizontalRule',
+  'table',
+  'figure',
+  'crossref',
 ];
 
 /**

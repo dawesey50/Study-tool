@@ -245,6 +245,38 @@
   content: 'Summary';
 }
 
+/*
+ * Tables. Fixed layout so a long cell widens its column rather than the whole
+ * table, and the wrapper scrolls instead of pushing the document sideways.
+ */
+.prose-notes table {
+  @apply my-4 w-full table-fixed border-collapse overflow-hidden rounded-lg text-sm;
+}
+
+.prose-notes th,
+.prose-notes td {
+  @apply border border-line px-2.5 py-1.5 align-top;
+}
+
+.prose-notes th {
+  @apply bg-canvas text-left font-semibold;
+}
+
+.prose-notes th p,
+.prose-notes td p {
+  @apply m-0;
+}
+
+/* The cell the cursor is in, and any cells dragged across. */
+.prose-notes .selectedCell::after {
+  @apply pointer-events-none absolute inset-0 bg-accent-soft/60;
+  content: '';
+}
+
+.prose-notes .selectedCell {
+  @apply relative;
+}
+
 /* A locked block is visibly not yours to type in. */
 .prose-notes [data-block-locked='true'] {
   @apply opacity-70;

@@ -370,14 +370,30 @@ export const api = {
     request<Figure[]>(`/api/sections/${sectionId}/figures`),
 
   getNotes: (sectionId: string) => request<NoteBlock[]>(`/api/sections/${sectionId}/notes`),
-  createNote: (sectionId: string, body: { type?: NoteBlockType; markdown?: string; position?: number }) =>
+  createNote: (
+    sectionId: string,
+    body: {
+      id?: string;
+      type?: NoteBlockType;
+      markdown?: string;
+      position?: number;
+      figureId?: string | null;
+      targetSectionId?: string | null;
+    },
+  ) =>
     request<NoteBlock>(`/api/sections/${sectionId}/notes`, {
       method: 'POST',
       body: JSON.stringify(body),
     }),
   updateNote: (
     id: string,
-    body: { markdown?: string; type?: NoteBlockType; locked?: boolean },
+    body: {
+      markdown?: string;
+      type?: NoteBlockType;
+      locked?: boolean;
+      figureId?: string | null;
+      targetSectionId?: string | null;
+    },
   ) => request<NoteBlock>(`/api/notes/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteNote: (id: string) => request<void>(`/api/notes/${id}`, { method: 'DELETE' }),
   reorderNotes: (sectionId: string, orderedIds: string[]) =>

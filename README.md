@@ -125,7 +125,15 @@ dropped as slide furniture rather than treated as figures.
 
 **You write in a document; it is stored as blocks.** The editor is one
 continuous page — type, press Enter, use `# ` for a heading or `- ` for a
-bullet, `/` to insert a callout. There is no block type to pick.
+bullet, `/` to insert a callout, a table, a figure or a cross-reference. There
+is no block type to pick.
+
+A figure can only be placed from the ones ingestion pulled out of your own
+PDFs, and a cross-reference can only point at a section that exists, because
+either one typed by hand could look right and resolve to nothing. A
+cross-reference stores the section's identity, never its number, so moving
+either section around the tree renumbers what it displays instead of breaking
+it.
 
 Underneath, each top-level paragraph carries a stable id and is stored as its
 own row. That is not machinery that leaked into the design, it is the point: a

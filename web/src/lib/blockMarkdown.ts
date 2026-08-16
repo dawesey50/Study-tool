@@ -29,6 +29,16 @@ export interface DocBlock {
   blockId: string | null;
   type: BlockType;
   markdown: string;
+  /**
+   * The two references the database keeps in their own columns as well as in
+   * the markdown, so "which blocks point at this section?" and "where is this
+   * figure used?" are queries rather than a scan of every note's text.
+   *
+   * The markdown stays authoritative for what is rendered; these are the index
+   * kept in step with it on every save.
+   */
+  figureId?: string | null;
+  targetSectionId?: string | null;
 }
 
 // Minimal structural types for the ProseMirror JSON actually handled here.
@@ -54,6 +64,8 @@ export function docToBlocks(doc: PmNode): DocBlock[] {
       blockId: (node.attrs?.blockId as string | undefined) ?? null,
       type: blockTypeOf(node),
       markdown: nodeToMarkdown(node).trimEnd(),
+      figureId: (node.attrs?.figureId as string | undefined) ?? null,
+      targetSectionId: (node.attrs?.targetSectionId as string | undefined) ?? null,
     }))
     // A wholly empty paragraph is the cursor resting on a blank line, not
     // content worth a database row.
@@ -69,6 +81,12 @@ function blockTypeOf(node: PmNode): BlockType {
       return 'list';
     case 'codeBlock':
       return 'diagram';
+    case 'table':
+      return 'table';
+    case 'figure':
+      return 'figure';
+    case 'crossref':
+      return 'crossref';
     case 'blockquote':
       return node.attrs?.variant === 'summary' ? 'summary' : 'callout';
     default:
@@ -111,9 +129,66 @@ function nodeToMarkdown(node: PmNode, depth = 0): string {
     case 'horizontalRule':
       return '---';
 
+    // A figure is one line: the image, then its caption as the title. Keeping
+    // it to a single line means a caption can never be mistaken for the prose
+    // that follows it.
+    case 'figure': {
+      const src = String(node.attrs?.src ?? '');
+      const alt = String(node.attrs?.alt ?? '');
+      const caption = inlineToMarkdown(node.content).replace(/\n/g, ' ').trim();
+      return caption
+        ? `![${alt}](${src} "${caption.replace(/"/g, '\\"')}")`
+        : `![${alt}](${src})`;
+    }
+
+    // "→ [Cortical layers](section:uuid) how the six layers differ". The title
+    // is written down as well as the id so the line still reads on its own in
+    // a diff or a prompt, but only the id is authoritative.
+    case 'crossref': {
+      const target = String(node.attrs?.targetSectionId ?? '');
+      const label = String(node.attrs?.label ?? '').replace(/[[\]]/g, '');
+      const note = inlineToMarkdown(node.content).replace(/\n/g, ' ').trim();
+      return `→ [${label}](section:${target})${note ? ` ${note}` : ''}`;
+    }
+
+    case 'table':
+      return tableToMarkdown(node);
+
     default:
       return inlineToMarkdown(node.content);
   }
+}
+
+/**
+ * A GitHub-flavoured pipe table. The first row is treated as the header
+ * whether or not the editor marked it as one, because a table stored without a
+ * header row is not valid GFM and would come back as prose.
+ */
+function tableToMarkdown(node: PmNode): string {
+  const rows = (node.content ?? []).map((row) =>
+    (row.content ?? []).map((cell) =>
+      (cell.content ?? [])
+        .map((child) => nodeToMarkdown(child))
+        .join(' ')
+        .replace(/\n/g, ' ')
+        // A literal pipe would split the cell it lives in.
+        .replace(/\|/g, '\\|')
+        .trim(),
+    ),
+  );
+  if (rows.length === 0) return '';
+
+  const width = Math.max(...rows.map((row) => row.length));
+  const pad = (row: string[]): string[] =>
+    Array.from({ length: width }, (_, index) => row[index] ?? '');
+
+  const [header, ...body] = rows;
+  const lines = [
+    `| ${pad(header!).join(' | ')} |`,
+    `| ${Array.from({ length: width }, () => '---').join(' | ')} |`,
+    ...body.map((row) => `| ${pad(row).join(' | ')} |`),
+  ];
+  return lines.join('\n');
 }
 
 function listItemToMarkdown(item: PmNode, depth: number, ordinal: number | null): string {
@@ -167,6 +242,13 @@ export interface StoredBlock {
   id: string;
   type: BlockType;
   markdown: string;
+  /**
+   * Which extracted figure this block placed. Unlike the section id in a
+   * cross-reference, this one is not recoverable from the markdown, so it has
+   * to travel back into the document — otherwise every reload would clear the
+   * column on the next save and the figure would quietly stop being traceable.
+   */
+  figureId?: string | null;
 }
 
 export function blocksToDoc(blocks: StoredBlock[]): PmNode {
@@ -206,6 +288,37 @@ function blockToNodes(block: StoredBlock): PmNode[] {
       ];
     }
 
+    case 'figure': {
+      const match = block.markdown.match(/^!\[([^\]]*)\]\(([^\s)]+)(?:\s+"((?:[^"\\]|\\.)*)")?\)/);
+      if (!match) break;
+      const caption = (match[3] ?? '').replace(/\\"/g, '"');
+      return [
+        {
+          type: 'figure',
+          attrs: { ...attrs, src: match[2]!, alt: match[1]!, figureId: block.figureId ?? null },
+          content: caption ? parseInline(caption) : [],
+        },
+      ];
+    }
+
+    case 'crossref': {
+      const match = block.markdown.match(/^→\s*\[([^\]]*)\]\(section:([^)]*)\)\s*([\s\S]*)$/);
+      if (!match) break;
+      return [
+        {
+          type: 'crossref',
+          attrs: { ...attrs, targetSectionId: match[2]! || null, label: match[1]! },
+          content: match[3]!.trim() ? parseInline(match[3]!.trim()) : [],
+        },
+      ];
+    }
+
+    case 'table': {
+      const table = parseTable(lines, attrs);
+      if (!table) break;
+      return [table];
+    }
+
     case 'callout':
     case 'summary': {
       const inner = lines.map((line) => line.replace(/^>\s?/, ''));
@@ -218,16 +331,74 @@ function blockToNodes(block: StoredBlock): PmNode[] {
       ];
     }
 
-    default: {
-      // Prose, and anything the editor has no richer node for.
-      const paragraphs = paragraphsFrom(lines);
-      const [first, ...rest] = paragraphs;
-      if (!first) return [{ type: 'paragraph', attrs, content: [] }];
-      // Only the first node carries the block id; the rest become new blocks
-      // on the next save, which is the correct reading of "you split this".
-      return [{ ...first, attrs: { ...first.attrs, ...attrs } }, ...rest];
+    default:
+      break;
+  }
+
+  // Prose, and anything else: a block whose type promises more structure than
+  // its text actually carries is shown as the text it really is, rather than
+  // discarded or rendered as an empty shell.
+  const paragraphs = paragraphsFrom(lines);
+  const [first, ...rest] = paragraphs;
+  if (!first) return [{ type: 'paragraph', attrs, content: [] }];
+  // Only the first node carries the block id; the rest become new blocks on
+  // the next save, which is the correct reading of "you split this".
+  return [{ ...first, attrs: { ...first.attrs, ...attrs } }, ...rest];
+}
+
+const TABLE_ROW = /^\s*\|(.*)\|\s*$/;
+
+/** Split a pipe row into cells, respecting an escaped pipe inside one. */
+function splitRow(line: string): string[] {
+  const inner = line.match(TABLE_ROW)?.[1] ?? '';
+  const cells: string[] = [];
+  let current = '';
+  for (let index = 0; index < inner.length; index++) {
+    const char = inner[index]!;
+    if (char === '\\' && inner[index + 1] === '|') {
+      current += '|';
+      index++;
+    } else if (char === '|') {
+      cells.push(current.trim());
+      current = '';
+    } else {
+      current += char;
     }
   }
+  cells.push(current.trim());
+  return cells;
+}
+
+function parseTable(lines: string[], attrs: Record<string, unknown>): PmNode | null {
+  const rows = lines.filter((line) => TABLE_ROW.test(line));
+  if (rows.length === 0) return null;
+
+  const cellRows = rows
+    // The |---|---| divider carries alignment, which this editor does not
+    // offer, so it is dropped rather than turned into a row of dashes.
+    .filter((line) => !isDivider(line))
+    .map((line) => splitRow(line));
+  if (cellRows.length === 0) return null;
+
+  const width = Math.max(...cellRows.map((row) => row.length));
+  const toRow = (cells: string[], header: boolean): PmNode => ({
+    type: 'tableRow',
+    content: Array.from({ length: width }, (_, index) => ({
+      type: header ? 'tableHeader' : 'tableCell',
+      content: [{ type: 'paragraph', content: parseInline(cells[index] ?? '') }],
+    })),
+  });
+
+  const [head, ...body] = cellRows;
+  return {
+    type: 'table',
+    attrs,
+    content: [toRow(head!, true), ...body.map((row) => toRow(row, false))],
+  };
+}
+
+function isDivider(line: string): boolean {
+  return splitRow(line).every((cell) => /^:?-{2,}:?$/.test(cell));
 }
 
 function paragraphsFrom(lines: string[]): PmNode[] {

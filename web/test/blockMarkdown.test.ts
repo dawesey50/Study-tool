@@ -182,3 +182,110 @@ test('markdown characters in ordinary prose are not mangled', () => {
   const [result] = roundTrip([block('prose', markdown)]);
   assert.equal(result?.markdown, markdown);
 });
+
+// ---------------------------------------------------------------------------
+// The block types that used to degrade to prose
+// ---------------------------------------------------------------------------
+
+test('a figure keeps its image, alt text and caption', () => {
+  const markdown = '![Myelinated axon](/media/figures/l07-3.png "Figure 2 — saltatory conduction")';
+  const [result] = roundTrip([block('figure', markdown)]);
+
+  assert.equal(result?.type, 'figure', 'a figure must not come back as a paragraph');
+  assert.equal(result?.markdown, markdown);
+  assert.equal(result?.blockId, 'id-figure');
+});
+
+test('a figure with no caption stays a figure', () => {
+  const markdown = '![](/media/figures/l07-4.png)';
+  const [result] = roundTrip([block('figure', markdown)]);
+  assert.equal(result?.type, 'figure');
+  assert.equal(result?.markdown, markdown);
+});
+
+test('a quotation mark in a caption does not truncate it', () => {
+  const markdown = '![](/media/f.png "The so-called \\"sodium pump\\"")';
+  const [result] = roundTrip([block('figure', markdown)]);
+  assert.equal(result?.markdown, markdown);
+});
+
+test('a crossref points by identity, with the title as a readable fallback', () => {
+  const markdown =
+    '→ [Cortical layers](section:0f9c1e22-1111-2222-3333-444455556666) how the six layers differ';
+  const [result] = roundTrip([block('crossref', markdown)]);
+
+  assert.equal(result?.type, 'crossref', 'a crossref must not come back as its own markup');
+  assert.equal(result?.markdown, markdown);
+});
+
+test('a crossref with no explanatory note still round-trips', () => {
+  const markdown = '→ [Cortical layers](section:abc-123)';
+  const [result] = roundTrip([block('crossref', markdown)]);
+  assert.equal(result?.type, 'crossref');
+  assert.equal(result?.markdown, markdown);
+});
+
+test('a table survives as a table, header row included', () => {
+  const markdown = [
+    '| Ion | Inside | Outside |',
+    '| --- | --- | --- |',
+    '| Na+ | 12 mM | 145 mM |',
+    '| K+ | 155 mM | 4 mM |',
+  ].join('\n');
+  const [result] = roundTrip([block('table', markdown)]);
+
+  assert.equal(result?.type, 'table');
+  assert.equal(result?.markdown, markdown);
+});
+
+test('a pipe inside a cell does not split it', () => {
+  const markdown = ['| Symbol | Meaning |', '| --- | --- |', '| a \\| b | either one |'].join('\n');
+  const [result] = roundTrip([block('table', markdown)]);
+  assert.equal(result?.markdown, markdown);
+});
+
+test('a ragged table is squared off rather than losing cells', () => {
+  const markdown = ['| a | b | c |', '| --- | --- | --- |', '| 1 |'].join('\n');
+  const [result] = roundTrip([block('table', markdown)]);
+  assert.equal(result?.markdown, ['| a | b | c |', '| --- | --- | --- |', '| 1 |  |  |'].join('\n'));
+});
+
+test('inline formatting inside a table cell survives', () => {
+  const markdown = ['| Term | Note |', '| --- | --- |', '| **ATPase** | uses `ATP` |'].join('\n');
+  const [result] = roundTrip([block('table', markdown)]);
+  assert.equal(result?.markdown, markdown);
+});
+
+test('a block whose markup is malformed degrades to readable text, not an empty shell', () => {
+  // Whatever wrote this got it wrong. Showing the text is recoverable; showing
+  // an empty figure frame loses the content silently.
+  const [result] = roundTrip([block('crossref', 'see the chapter on cortical layers')]);
+  assert.equal(result?.type, 'prose');
+  assert.equal(result?.markdown, 'see the chapter on cortical layers');
+});
+
+test('a placed figure keeps the figure it came from across a reload', () => {
+  // The image URL does not identify the extracted figure, so the id has to
+  // travel separately. Without this the column would be cleared on the first
+  // save after any reload, and the figure would stop being traceable.
+  const stored: StoredBlock = {
+    id: 'id-figure',
+    type: 'figure',
+    markdown: '![](/media/figures/l07-3.png "Figure 2")',
+    figureId: 'fig-abc-123',
+  };
+  const [result] = docToBlocks(blocksToDoc([stored]));
+  assert.equal(result?.figureId, 'fig-abc-123');
+});
+
+test('a crossref reports its target as a column as well as in the text', () => {
+  const markdown = '→ [Cortical layers](section:sec-42) how the layers differ';
+  const [result] = roundTrip([block('crossref', markdown)]);
+  assert.equal(result?.targetSectionId, 'sec-42', 'the target must be queryable, not just readable');
+});
+
+test('an ordinary paragraph carries neither reference', () => {
+  const [result] = roundTrip([block('prose', 'Sodium enters through voltage-gated channels.')]);
+  assert.equal(result?.figureId, null);
+  assert.equal(result?.targetSectionId, null);
+});

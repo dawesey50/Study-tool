@@ -1,8 +1,13 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Placeholder from '@tiptap/extension-placeholder';
+import Table from '@tiptap/extension-table';
+import TableCell from '@tiptap/extension-table-cell';
+import TableHeader from '@tiptap/extension-table-header';
+import TableRow from '@tiptap/extension-table-row';
 import { BubbleMenu, EditorContent, useEditor, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { api, type NoteBlock } from '../lib/api';
 import {
   blocksToDoc,
@@ -17,6 +22,8 @@ import {
   TrailingParagraph,
   VariantBlockquote,
 } from './editor/extensions';
+import { CrossrefBlock, FigureBlock } from './editor/nodes';
+import { CrossrefPicker, FigurePicker } from './editor/pickers';
 import { Icon, type IconName } from './ui/Icon';
 import { useToast } from './ui/Toast';
 
@@ -38,7 +45,10 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
   const queryClient = useQueryClient();
   const toast = useToast();
 
+  const { moduleId } = useParams<{ moduleId: string }>();
+
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [picker, setPicker] = useState<'figure' | 'crossref' | null>(null);
   const [, forceRender] = useState(0);
 
   /** Last known server state, used to work out what actually changed. */
@@ -63,6 +73,12 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
           codeBlock: { HTMLAttributes: { class: 'font-mono text-xs' } },
         }),
         VariantBlockquote,
+        FigureBlock,
+        CrossrefBlock,
+        Table.configure({ resizable: false }),
+        TableRow,
+        TableHeader,
+        TableCell,
         BlockId,
         TrailingParagraph,
         lockGuard,
@@ -113,6 +129,7 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
           id: block.id,
           type: block.type as BlockType,
           markdown: block.markdown,
+          figureId: block.figureId,
         })),
       ) as never,
       false,
@@ -134,7 +151,15 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
     const changed = desired.filter((block) => {
       if (!block.blockId) return false;
       const existing = byId.get(block.blockId);
-      return existing && (existing.markdown !== block.markdown || existing.type !== block.type);
+      if (!existing) return false;
+      return (
+        existing.markdown !== block.markdown ||
+        existing.type !== block.type ||
+        // The reference columns are part of the block, so a figure swapped for
+        // a different one is a change even when the caption happens to match.
+        (existing.figureId ?? null) !== (block.figureId ?? null) ||
+        (existing.targetSectionId ?? null) !== (block.targetSectionId ?? null)
+      );
     });
 
     const orderChanged =
@@ -159,11 +184,18 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
           ...(block.blockId ? { id: block.blockId } : {}),
           type: block.type,
           markdown: block.markdown,
+          figureId: block.figureId ?? null,
+          targetSectionId: block.targetSectionId ?? null,
         });
       }
 
       for (const block of changed) {
-        await api.updateNote(block.blockId!, { markdown: block.markdown, type: block.type });
+        await api.updateNote(block.blockId!, {
+          markdown: block.markdown,
+          type: block.type,
+          figureId: block.figureId ?? null,
+          targetSectionId: block.targetSectionId ?? null,
+        });
       }
 
       const ordered = desired.map((block) => block.blockId).filter(Boolean) as string[];
@@ -260,9 +292,25 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
         the menu lands somewhere else entirely.
       */}
       <div className="relative mt-3">
-        <SlashMenu editor={editor} />
+        <SlashMenu editor={editor} onPicker={setPicker} />
         <EditorContent editor={editor} />
       </div>
+
+      <FigurePicker
+        open={picker === 'figure'}
+        onClose={() => setPicker(null)}
+        sectionId={sectionId}
+        onChoose={(figure) => editor.commands.insertFigure(figure)}
+      />
+      {moduleId && (
+        <CrossrefPicker
+          open={picker === 'crossref'}
+          onClose={() => setPicker(null)}
+          moduleId={moduleId}
+          exceptSectionId={sectionId}
+          onChoose={(target) => editor.commands.insertCrossref(target)}
+        />
+      )}
 
       <div className="mt-6 flex items-center justify-between border-t border-line pt-3 text-2xs text-muted">
         <span>
@@ -551,7 +599,10 @@ interface SlashItem {
   label: string;
   hint: string;
   icon: IconName;
-  run: (editor: Editor) => void;
+  /** Inserts straight away. Omitted when the item has to ask something first. */
+  run?: (editor: Editor) => void;
+  /** Opens a picker instead, because the block needs a target to be worth anything. */
+  picker?: 'figure' | 'crossref';
 }
 
 const SLASH_ITEMS: SlashItem[] = [
@@ -575,10 +626,24 @@ const SLASH_ITEMS: SlashItem[] = [
       e.chain().focus().toggleBlockquote().updateAttributes('blockquote', { variant: 'summary' }).run(),
   },
   { label: 'Diagram', hint: 'mermaid or code', icon: 'file', run: (e) => e.chain().focus().toggleCodeBlock().run() },
+  {
+    label: 'Table',
+    hint: '3 × 3 to start',
+    icon: 'layers',
+    run: (e) => e.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
+  },
+  { label: 'Figure', hint: 'from this section', icon: 'image', picker: 'figure' },
+  { label: 'Cross-reference', hint: 'point, do not repeat', icon: 'chevronRight', picker: 'crossref' },
   { label: 'Divider', hint: '---', icon: 'close', run: (e) => e.chain().focus().setHorizontalRule().run() },
 ];
 
-function SlashMenu({ editor }: { editor: Editor }) {
+function SlashMenu({
+  editor,
+  onPicker,
+}: {
+  editor: Editor;
+  onPicker: (kind: 'figure' | 'crossref') => void;
+}) {
   const [state, setState] = useState<{ query: string; top: number; left: number } | null>(null);
   const [highlighted, setHighlighted] = useState(0);
 
@@ -627,10 +692,11 @@ function SlashMenu({ editor }: { editor: Editor }) {
         .focus()
         .deleteRange({ from: $from.start(), to: $from.pos })
         .run();
-      item.run(editor);
+      if (item.picker) onPicker(item.picker);
+      else item.run?.(editor);
       setState(null);
     },
-    [editor],
+    [editor, onPicker],
   );
 
   useEffect(() => {

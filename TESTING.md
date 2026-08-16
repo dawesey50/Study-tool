@@ -48,10 +48,10 @@ material:
 - `vector.test.ts` — BLOB round-tripping, cosine, and nearest-neighbour
   ranking against whichever vector backend is active.
 - `web/test/blockMarkdown.test.ts` — that a section survives the trip from
-  storage into the editor and back unchanged. This one matters more than its
-  size suggests: it runs on every save, and a bug there does not crash
-  anything, it quietly rewrites your notes into something slightly wrong until
-  you notice weeks later.
+  storage into the editor and back unchanged, including tables, placed figures
+  and cross-references. This one matters more than its size suggests: it runs
+  on every save, and a bug there does not crash anything, it quietly rewrites
+  your notes into something slightly wrong until you notice weeks later.
 
 - `llm.test.ts` — the model layer, all of it offline. A stub provider that
   reports real-looking token counts stands in for the transport, so routing,
@@ -91,9 +91,11 @@ npm run test:e2e                                               # terminal 2
 One flowing journey rather than isolated cases: create a module, paste an
 outline, upload and ingest slides, map them to sections, read chunks with
 their slide citations, confirm figures actually render, write a note and
-reload, lock it, search, drag a section to a new position, and open Settings to
-check that it says which model each task will run and where the spending limits
-sit.
+reload, lock it, insert a table and a figure and a cross-reference and check
+they come back as real blocks rather than the text of their own markup, search,
+drag a section to a new position — which must renumber the cross-reference
+rather than leave it stale — and open Settings to check that it says which
+model each task will run and where the spending limits sit.
 
 It fails on any browser console error, not just a failed assertion.
 
