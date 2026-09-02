@@ -336,6 +336,43 @@ await step('a restore point brings destroyed notes back', async () => {
   await page.getByText(/Myelination increases conduction velocity/).waitFor({ timeout: 10_000 });
 });
 
+await step('a pathway renders as a diagram and an equation as maths', async () => {
+  const sectionId = page.url().split('/sections/')[1];
+  await page.evaluate(async (id) => {
+    const post = (body) =>
+      fetch(`/api/sections/${id}/notes`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    await post({
+      type: 'diagram',
+      markdown: '```mermaid\ngraph TD\n  A[Glucose] --> B[Pyruvate]\n```',
+    });
+    await post({ type: 'prose', markdown: 'At equilibrium $E = \\frac{RT}{zF}$ holds.' });
+  }, sectionId);
+
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: 'Notes' }).click();
+
+  // Both libraries are loaded on demand, so this also proves the lazy import
+  // actually resolves rather than silently failing.
+  await page.locator('.mermaid-rendered svg').first().waitFor({ timeout: 20_000 });
+  await page.locator('.katex').first().waitFor({ timeout: 20_000 });
+
+  // And the source survives the round trip through storage.
+  const stored = await page.evaluate(
+    (id) => fetch(`/api/sections/${id}/notes`).then((r) => r.json()),
+    sectionId,
+  );
+  if (!stored.some((b) => b.markdown.includes('graph TD'))) {
+    throw new Error('the mermaid source did not survive');
+  }
+  if (!stored.some((b) => b.markdown.includes('$E = \\frac{RT}{zF}$'))) {
+    throw new Error(`the equation did not survive: ${JSON.stringify(stored.map((b) => b.markdown))}`);
+  }
+});
+
 await step('the concepts tab is honest about having nothing yet', async () => {
   await page.getByRole('button', { name: 'Concepts' }).click();
   await page.getByText('Nothing extracted yet').waitFor({ timeout: 10_000 });

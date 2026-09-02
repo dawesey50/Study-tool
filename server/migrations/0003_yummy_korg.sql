@@ -1,0 +1,1 @@
+ALTER TABLE `concepts` ADD `examinable_evidence` text;

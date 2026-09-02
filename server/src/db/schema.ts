@@ -197,6 +197,17 @@ export const concepts = sqliteTable(
     bloomCeiling: text('bloom_ceiling'),
     difficulty: integer('difficulty'),
     examinableFlag: integer('examinable_flag', { mode: 'boolean' }).notNull().default(false),
+    /**
+     * Why this is flagged examinable, when a past paper is what flagged it.
+     *
+     * A flag with no evidence behind it is an assertion; with the paper and
+     * page attached it is a claim you can check in ten seconds. That matters
+     * because this flag goes on to weight note generation and question
+     * sampling, so a wrong one propagates quietly.
+     */
+    examinableEvidence: json<
+      Array<{ chunkId: string; location: string; score: number; excerpt: string }>
+    >('examinable_evidence'),
     emphasisScore: real('emphasis_score'),
     sourceChunkIds: json<string[]>('source_chunk_ids'),
     prerequisiteIds: json<string[]>('prerequisite_ids'),

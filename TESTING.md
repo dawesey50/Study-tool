@@ -60,6 +60,11 @@ material:
   built for. The coverage loop has two exits and both are covered — the pass cap,
   and a pass that stopped making progress, because continuing past that only
   costs money.
+- `pastPapers.test.ts` — flagging concepts as examinable from past papers. No
+  model is involved, so what it has to get right is not being confidently
+  wrong: every flag carries its evidence, a flag you set by hand is never
+  cleared, and when there is nothing to compare it concludes nothing rather
+  than guessing.
 - `concepts.test.ts` — extraction, dedupe and ownership, all against the stub.
   It says nothing about whether the extraction *prompt* is any good — that
   needs real material and your judgement. What it does prove is what must hold
@@ -112,7 +117,9 @@ One flowing journey rather than isolated cases: create a module, paste an
 outline, upload and ingest slides, map them to sections, read chunks with
 their slide citations, confirm figures actually render, write a note and
 reload, lock it, insert a table and a figure and a cross-reference and check
-they come back as real blocks rather than the text of their own markup, search,
+they come back as real blocks rather than the text of their own markup, add a
+Mermaid pathway and a LaTeX equation and confirm both actually render — which
+also proves the on-demand imports resolve rather than silently failing — search,
 drag a section to a new position — which must renumber the cross-reference
 rather than leave it stale — and open Settings to check that it says which
 model each task will run and where the spending limits sit.

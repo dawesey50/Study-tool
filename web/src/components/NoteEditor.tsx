@@ -23,6 +23,8 @@ import {
   VariantBlockquote,
 } from './editor/extensions';
 import { GenerateNotes } from './GenerateNotes';
+import { DiagramBlock } from './editor/diagram';
+import { MathInline } from './editor/math';
 import { CrossrefBlock, FigureBlock } from './editor/nodes';
 import { CrossrefPicker, FigurePicker } from './editor/pickers';
 import { Icon, type IconName } from './ui/Icon';
@@ -71,9 +73,13 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
         StarterKit.configure({
           heading: { levels: [1, 2, 3] },
           blockquote: false,
-          codeBlock: { HTMLAttributes: { class: 'font-mono text-xs' } },
+          // Replaced by DiagramBlock, which renders Mermaid where it is written
+          // and behaves exactly like a code block for anything else.
+          codeBlock: false,
         }),
+        DiagramBlock.configure({ HTMLAttributes: { class: 'font-mono text-xs' } }),
         VariantBlockquote,
+        MathInline,
         FigureBlock,
         CrossrefBlock,
         Table.configure({ resizable: false }),
@@ -627,7 +633,19 @@ const SLASH_ITEMS: SlashItem[] = [
     run: (e) =>
       e.chain().focus().toggleBlockquote().updateAttributes('blockquote', { variant: 'summary' }).run(),
   },
-  { label: 'Diagram', hint: 'mermaid or code', icon: 'file', run: (e) => e.chain().focus().toggleCodeBlock().run() },
+  {
+    label: 'Diagram',
+    hint: 'mermaid pathway',
+    icon: 'file',
+    run: (e) =>
+      e
+        .chain()
+        .focus()
+        .setCodeBlock({ language: 'mermaid' })
+        .insertContent('graph TD\n  A[Glucose] --> B[Glucose-6-phosphate]')
+        .run(),
+  },
+  { label: 'Code', hint: 'plain block', icon: 'file', run: (e) => e.chain().focus().toggleCodeBlock().run() },
   {
     label: 'Table',
     hint: '3 × 3 to start',

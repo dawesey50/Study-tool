@@ -33,7 +33,8 @@ rather than reshaping data.
 | 2 — Note generation and the coverage check | Done, prompt unvalidated |
 | 3 — Question engine: blueprints, novelty gate, examiner pass | Not started |
 | 4 — FSRS scheduling at concept level, mastery rollup | Not started |
-| 5 — Past papers, timed exams, concept map | Not started |
+| 5 — Past papers setting examinability | Done |
+| 5 — Timed exams, concept map | Not started |
 
 ## Using it
 
@@ -165,6 +166,21 @@ identical concepts are merged: over-splitting is what makes a coverage badge
 lie, since five restatements of one idea are all "covered" by the sentence that
 says it once.
 
+**Pathways render as diagrams, equations as maths.** A `diagram` block holding
+Mermaid is drawn where it sits — a pathway as arrows beats the same pathway as
+a sentence, and biochemistry is full of them. `$...$` in prose is rendered by
+KaTeX, because the Nernst equation set properly is materially easier to read
+than as plain text. Both libraries load only when a note actually contains one,
+so a module with neither pays nothing for them. Storage stays markdown either
+way: a fenced ```mermaid block, and the LaTeX between its dollar signs.
+
+**Past papers say what is examinable.** Every question in one was examined by
+definition, so matching them against the concept list needs no model at all.
+Each flag it sets carries the paper, the page and the words that matched,
+because that flag goes on to weight note generation and question sampling — a
+wrong one you cannot check is worse than no flag. It never clears a flag you
+set yourself.
+
 **Generated notes never touch your writing.** A generation run replaces the
 blocks it wrote before and nothing else: anything you wrote, and anything you
 locked, stays exactly where it is. A restore point is taken first regardless.
@@ -218,7 +234,10 @@ npm run db:generate  # regenerate migrations after editing the Drizzle schema
 Migrations are generated from `server/src/db/schema.ts` and applied
 automatically at startup, so there is no separate migrate step.
 
-[TESTING.md](TESTING.md) explains the four testing layers, and — importantly —
+[WEEKLY.md](WEEKLY.md) is the one-page version of how a week goes with this,
+and what to check before term.
+
+[TESTING.md](TESTING.md) explains the five testing layers, and — importantly —
 what you still need to check by hand the first time the real embedding model
 downloads, since the suites run against an offline provider with no semantic
 understanding.

@@ -266,6 +266,12 @@ export interface Concept {
   examinableFlag: boolean;
   emphasisScore: number | null;
   sourceChunkIds: string[] | null;
+  examinableEvidence: Array<{
+    chunkId: string;
+    location: string;
+    score: number;
+    excerpt: string;
+  }> | null;
   createdAt: number;
   embedded: boolean;
   citations: string[];
@@ -292,6 +298,16 @@ export interface SectionConcepts {
   sourceChunks: number;
   plausibility: PlausibilityWarning | null;
   concepts: Concept[];
+}
+
+export interface ExaminableResult {
+  moduleId: string;
+  papers: number;
+  questions: number;
+  conceptsConsidered: number;
+  flagged: number;
+  alreadyFlagged: number;
+  unmeasured: boolean;
 }
 
 export interface ConceptJob {
@@ -549,6 +565,11 @@ export const api = {
     body: { statement?: string; type?: ConceptType; examinableFlag?: boolean },
   ) => request<Concept>(`/api/concepts/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteConcept: (id: string) => request<void>(`/api/concepts/${id}`, { method: 'DELETE' }),
+  markExaminable: (moduleId: string) =>
+    request<ExaminableResult>(`/api/modules/${moduleId}/concepts/examinable`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
   getConceptSources: (id: string) =>
     request<Array<{ id: string; text: string; location: string }>>(
       `/api/concepts/${id}/sources`,

@@ -45,7 +45,7 @@ which is where the spec's two differentiators live — are not started.
 | §2 Local-first, single user, SQLite + media folder | **Done** | One file plus a folder, no accounts, works offline once the model is cached |
 | §2 Inputs: slides, transcripts, textbook, own notes | **Done** | PDF, DOCX, TXT/MD, VTT/SRT |
 | §2 No audio pipeline | **Done** | Correctly out of scope |
-| §3 Frontend stack | **Mostly** | React/TS/Vite/Tailwind/TanStack/TipTap all in use. **KaTeX and Mermaid are installed but never imported** — equations and pathway diagrams do not render |
+| §3 Frontend stack | **Done** | React/TS/Vite/Tailwind/TanStack/TipTap in use; KaTeX and Mermaid now render equations and pathway diagrams, loaded on demand |
 | §3 Backend stack | **Done** | Fastify, better-sqlite3, Drizzle, sqlite-vec, local media |
 | §3 Ingestion libraries | **Mostly** | pdfjs, mammoth, transformers.js in use. `pdf-to-img` never added, so there are no page thumbnails |
 | §3 LLM routing (`llm.complete`) | **Done** | One interface, task-to-model mapping in config, provider fallback, cost ledger and three spending limits |
@@ -54,10 +54,10 @@ which is where the spec's two differentiators live — are not started.
 | §4 Hierarchy *proposed* by an LLM | **Not started** | Spec calls this "the default flow" |
 | §4 Four tabs per section | **Half** | Notes, Concepts and Sources work; Exam questions and Practice are honest placeholders |
 | §5 Data model | **Done** | All 15 tables exist, including those nothing writes to yet |
-| §6.1 Note generation pipeline | **Not started** | |
-| §6.2 Coverage check and badge | **Not started** | Only referenced in comments |
-| §6.3 Note format config template | **Not started** | |
-| §6.4 Figure placement by similarity | **Not started** | Figures are extracted and listed, never placed |
+| §6.1 Note generation pipeline | **Done** | Block-by-block against the concept list; prompt unvalidated on real material |
+| §6.2 Coverage check and badge | **Done** | Measured against the note text, capped at three passes, names what is uncovered |
+| §6.3 Note format config template | **Done** | One editable template, overridable with NOTE_FORMAT |
+| §6.4 Figure placement by similarity | **Done** | Placed beside the block their caption matches |
 | §6.5 Cross-referencing instead of repeating | **Mostly** | The crossref block renders and resolves to a live section number; ownership is assigned across the module at ~0.9 cosine. Generation writing crossref blocks instead of prose is Step 5 |
 | §6.6 Editing and edit preservation | **Done** | Blocks carry origin and a lock; locked blocks reject edits |
 | §6.6 Section action toolbar | **Not started** | No "explain further", "rewrite", "go deeper" |
@@ -106,12 +106,18 @@ time, waiting for each, is tedious enough that it will put you off using the
 thing. The 200 MB cap is also below some scanned textbooks — the 900-page test
 document was 121 MB, and a genuine scan is larger.
 
-### P0-4 — Dead dependencies, missing rendering
+### P0-4 — Dead dependencies, missing rendering — **fixed**
 
-KaTeX and Mermaid are in `web/package.json` and imported nowhere. So the spec's
-"pathway and process diagrams as Mermaid" and equation rendering do not exist,
-while the download cost does. Either wire them up or remove them; shipping both
-the weight and the absence is the worst of both.
+KaTeX and Mermaid were in `web/package.json` and imported nowhere, so the
+spec's "pathway and process diagrams as Mermaid" and equation rendering did not
+exist while the download cost did.
+
+Plan v2 was right to defer this rather than wire a renderer to content that did
+not exist yet. Generation can now write a diagram block, so both are wired up:
+Mermaid draws pathway diagrams where they sit, `$...$` renders through KaTeX,
+and the note format asks generation to produce both. Each library is imported
+on demand, so a module with no diagrams and no equations pays nothing for
+them — which was the half of the complaint that mattered.
 
 ### P1-1 — Block types that degrade to plain text — **fixed**
 

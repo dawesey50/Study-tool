@@ -215,6 +215,9 @@ function inlineToMarkdown(content: PmNode[] | undefined): string {
   return content
     .map((node) => {
       if (node.type === 'hardBreak') return '\n';
+      // An equation is stored as the LaTeX it was written as, so the notes
+      // stay readable markdown and a model can both read and write them.
+      if (node.type === 'math') return `$${String(node.attrs?.latex ?? '')}$`;
       if (node.type !== 'text' || !node.text) return '';
 
       let text = node.text;
@@ -468,7 +471,9 @@ function parseList(lines: string[], depth: number, attrs: Record<string, unknown
 export function parseInline(text: string): PmNode[] {
   if (!text) return [];
 
-  const pattern = /(`[^`]+`|\*\*[^*]+\*\*|~~[^~]+~~|\*[^*]+\*)/g;
+  // Maths comes first in the alternation so a $...$ containing an asterisk is
+  // not shredded into emphasis before it is recognised as an equation.
+  const pattern = /(\$[^$\n]+\$|`[^`]+`|\*\*[^*]+\*\*|~~[^~]+~~|\*[^*]+\*)/g;
   const nodes: PmNode[] = [];
   let cursor = 0;
 
@@ -477,7 +482,9 @@ export function parseInline(text: string): PmNode[] {
     if (start > cursor) nodes.push({ type: 'text', text: text.slice(cursor, start) });
 
     const token = match[0];
-    if (token.startsWith('`')) {
+    if (token.startsWith('$')) {
+      nodes.push({ type: 'math', attrs: { latex: token.slice(1, -1) } });
+    } else if (token.startsWith('`')) {
       nodes.push({ type: 'text', text: token.slice(1, -1), marks: [{ type: 'code' }] });
     } else if (token.startsWith('**')) {
       nodes.push({ type: 'text', text: token.slice(2, -2), marks: [{ type: 'bold' }] });

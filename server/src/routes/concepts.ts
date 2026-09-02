@@ -15,6 +15,7 @@ import {
   isExtracting,
   startExtraction,
 } from '../services/conceptJobs.js';
+import { markExaminableFromPastPapers } from '../services/pastPapers.js';
 import { describeLocation } from '../services/search.js';
 import { flatten, getTree } from '../services/sections.js';
 
@@ -186,6 +187,23 @@ export async function conceptRoutes(app: FastifyInstance): Promise<void> {
 
     setOwner(id, ownerId);
     return conceptLinks(id);
+  });
+
+  /**
+   * Let the past papers say what is examinable. No model involved: every
+   * question in a past paper was, by definition, examined.
+   */
+  app.post('/api/modules/:id/concepts/examinable', async (request, reply) => {
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+    const body = z.object({ sourceIds: z.array(z.string()).optional() }).parse(request.body ?? {});
+
+    const module = db.select().from(schema.modules).where(eq(schema.modules.id, id)).get();
+    if (!module) return reply.code(404).send({ error: 'Module not found' });
+
+    return markExaminableFromPastPapers({
+      moduleId: id,
+      ...(body.sourceIds ? { sourceIds: body.sourceIds } : {}),
+    });
   });
 
   /** The chunks a concept cites, so a claim can be checked against its source. */

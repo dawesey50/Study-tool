@@ -289,3 +289,28 @@ test('an ordinary paragraph carries neither reference', () => {
   assert.equal(result?.figureId, null);
   assert.equal(result?.targetSectionId, null);
 });
+
+test('an inline equation survives as the LaTeX it was written as', () => {
+  const markdown = 'The Nernst equation is $E = \\frac{RT}{zF}\\ln\\frac{[K]_o}{[K]_i}$ at equilibrium.';
+  const [result] = roundTrip([block('prose', markdown)]);
+  assert.equal(result?.markdown, markdown);
+});
+
+test('an equation containing an asterisk is not shredded into emphasis', () => {
+  const markdown = 'Rate is $v = k[A]*[B]$ under those conditions.';
+  const [result] = roundTrip([block('prose', markdown)]);
+  assert.equal(result?.markdown, markdown);
+});
+
+test('a lone dollar sign is left as text', () => {
+  const markdown = 'The kit costs $40 and lasts a term.';
+  const [result] = roundTrip([block('prose', markdown)]);
+  assert.equal(result?.markdown, markdown);
+});
+
+test('a mermaid diagram round-trips as a fenced block', () => {
+  const markdown = '```mermaid\ngraph TD\n  A[Glucose] --> B[G6P]\n```';
+  const [result] = roundTrip([block('diagram', markdown)]);
+  assert.equal(result?.type, 'diagram');
+  assert.equal(result?.markdown, markdown);
+});

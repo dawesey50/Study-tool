@@ -61,6 +61,39 @@ export function ConceptList({ moduleId, sectionId }: { moduleId: string; section
     }
   }, [job, queryClient, sectionId, toast]);
 
+  /**
+   * Past papers, not a model. Every question in one was examined by
+   * definition, so this is the cheapest evidence in the system and it costs
+   * nothing to run.
+   */
+  const examinable = useMutation({
+    mutationFn: () => api.markExaminable(moduleId),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['concepts'] });
+      if (result.papers === 0) {
+        toast.error(
+          'No past papers in this module',
+          'Upload one on the Sources page, filed as "Past paper", and run this again.',
+        );
+      } else if (result.unmeasured) {
+        toast.error(
+          'Could not compare against the papers',
+          'The past papers or the concepts have no embeddings yet. Run Backfill missing ' +
+            'embeddings in Settings first.',
+        );
+      } else {
+        toast.success(
+          result.flagged > 0
+            ? `Flagged ${result.flagged} concept${result.flagged === 1 ? '' : 's'} as examinable`
+            : 'Nothing new to flag',
+          `Checked ${result.conceptsConsidered} concepts against ${result.questions} questions ` +
+            `from ${result.papers} paper${result.papers === 1 ? '' : 's'}.`,
+        );
+      }
+    },
+    onError: (error: Error) => toast.error('Could not check the past papers', error.message),
+  });
+
   const extract = useMutation({
     mutationFn: (fresh: boolean) =>
       api.extractConcepts(moduleId, { sectionIds: [sectionId], fresh }),
@@ -99,6 +132,17 @@ export function ConceptList({ moduleId, sectionId }: { moduleId: string; section
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
+          {concepts.length > 0 && (
+            <button
+              className="btn btn-sm"
+              onClick={() => examinable.mutate()}
+              disabled={examinable.isPending}
+              title="Match this module's past papers against the concepts and flag what has come up"
+            >
+              <Icon name="file" size={13} />
+              {examinable.isPending ? 'Checking…' : 'Check past papers'}
+            </button>
+          )}
           {concepts.length > 0 && (
             <button
               className="btn btn-sm"
@@ -316,6 +360,25 @@ function ConceptRow({
           </button>
         </span>
       </div>
+
+      {concept.examinableEvidence?.length ? (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-2xs text-muted">
+            Examined before · {concept.examinableEvidence.length} match
+            {concept.examinableEvidence.length === 1 ? '' : 'es'} in past papers
+          </summary>
+          <ul className="mt-1 space-y-1">
+            {concept.examinableEvidence.map((entry) => (
+              <li
+                key={entry.chunkId}
+                className="rounded-lg border border-line px-2 py-1 text-2xs leading-relaxed text-muted"
+              >
+                <span className="font-mono text-faint">{entry.location}</span> — {entry.excerpt}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
 
       {concept.ownedElsewhere && (
         <p className="mt-2 rounded-lg border border-accent/25 bg-accent-soft/40 px-2 py-1 text-2xs leading-relaxed">

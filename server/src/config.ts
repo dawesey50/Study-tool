@@ -96,6 +96,15 @@ export const config = {
     noteFormat: str('NOTE_FORMAT', ''),
   },
 
+  /**
+   * Matching past-paper questions to concepts. Untuned like the rest: set it
+   * too low and half the module gets flagged examinable, which is the same as
+   * flagging none of it.
+   */
+  pastPapers: {
+    matchThreshold: num('PAST_PAPER_MATCH_THRESHOLD', 0.55),
+  },
+
   ingest: {
     chunkTargetChars: num('CHUNK_TARGET_CHARS', 1400),
     chunkOverlapChars: num('CHUNK_OVERLAP_CHARS', 180),

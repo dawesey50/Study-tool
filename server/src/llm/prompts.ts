@@ -147,6 +147,12 @@ export const DEFAULT_NOTE_FORMAT = `Structure each section as:
 - Then the material itself, organised under "## " subheadings that follow the
   lecture's own structure rather than a generic template.
 - Prose for mechanisms and explanations; bullets only for genuine lists.
+- A pathway or process with three or more steps goes in a "diagram" block as a
+  Mermaid graph, fenced as \`\`\`mermaid — for example
+  "graph TD\n  A[Glucose] --> B[Glucose-6-phosphate]". A sequence of arrows is
+  easier to revise from than the same sequence as a sentence.
+- An equation goes inline between dollar signs, as LaTeX: $E = \\frac{RT}{zF}$.
+  Write the equation the material gives; do not introduce one it does not.
 - A "## Summary" at the end: the three or four things that must be remembered.
 
 Write in plain, direct English at the level of a second-year biomedical
@@ -176,7 +182,7 @@ export const NOTE_GENERATION_SCHEMA = {
         properties: {
           type: {
             type: 'string',
-            enum: ['heading', 'prose', 'list', 'table', 'callout', 'summary'],
+            enum: ['heading', 'prose', 'list', 'table', 'callout', 'summary', 'diagram'],
           },
           markdown: {
             type: 'string',
