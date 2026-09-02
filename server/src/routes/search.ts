@@ -35,6 +35,7 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
     vectorIndex: isVecAvailable() ? 'sqlite-vec' : 'brute-force',
     vectorBackendRequested: config.vectorBackend,
     dataDir: config.dataDir,
+    maxUploadMb: config.maxUploadMb,
   }));
 
   /**

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, flattenSections } from '../lib/api';
 import { RestorePoints } from '../components/RestorePoints';
 import { Icon } from '../components/ui/Icon';
@@ -18,6 +18,7 @@ import { useToast } from '../components/ui/Toast';
 export function ModulePage() {
   const { moduleId } = useParams<{ moduleId: string }>();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const toast = useToast();
   const confirm = useConfirm();
   const [outline, setOutline] = useState('');
@@ -33,6 +34,25 @@ export function ModulePage() {
     queryKey: ['sources', moduleId],
     queryFn: () => api.listSources(moduleId!),
     enabled: Boolean(moduleId),
+  });
+
+  /**
+   * One section, straight away.
+   *
+   * Notes live inside a section, so a module with none has nowhere to write —
+   * and offering only "paste an outline" made the first note conditional on
+   * having your handbook to hand. It lands you in the new section's editor,
+   * because adding it was never the thing you wanted.
+   */
+  const addSection = useMutation({
+    mutationFn: () => api.createSection({ moduleId: moduleId!, title: 'Untitled section' }),
+    onSuccess: (section) => {
+      queryClient.invalidateQueries({ queryKey: ['sections', moduleId] });
+      queryClient.invalidateQueries({ queryKey: ['module', moduleId] });
+      queryClient.invalidateQueries({ queryKey: ['modules'] });
+      navigate(`/modules/${moduleId}/sections/${section.id}`);
+    },
+    onError: (error: Error) => toast.error('Could not add a section', error.message),
   });
 
   const applyOutline = useMutation({
@@ -126,11 +146,27 @@ export function ModulePage() {
             <h3 className="mt-3 font-medium">No sections yet</h3>
             <p className="mx-auto mt-1 max-w-sm text-sm leading-relaxed text-muted">
               Sections are the organising unit — a place in the syllabus, rather than one
-              lecture. Paste your module handbook outline to build the tree in one go.
+              lecture. <strong className="font-medium text-ink">Your notes live inside a
+              section</strong>, so you need at least one before you can write anything.
             </p>
-            <button className="btn btn-primary mt-4" onClick={() => setOutlineOpen(true)}>
-              Paste an outline
-            </button>
+            <div className="mt-4 flex items-center justify-center gap-2">
+              <button
+                className="btn btn-primary"
+                onClick={() => addSection.mutate()}
+                disabled={addSection.isPending}
+              >
+                <Icon name="plus" size={15} />
+                {addSection.isPending ? 'Adding…' : 'Add a section'}
+              </button>
+              <button className="btn" onClick={() => setOutlineOpen(true)}>
+                <Icon name="edit" size={14} />
+                Paste an outline
+              </button>
+            </div>
+            <p className="mx-auto mt-3 max-w-sm text-xs leading-relaxed text-muted">
+              One section is enough to start. Paste your handbook outline instead if you want the
+              whole tree in one go — you can rename, add and drag sections at any time.
+            </p>
           </div>
         ) : (
           <ul className="mt-3 overflow-hidden rounded-xl border border-line bg-panel">

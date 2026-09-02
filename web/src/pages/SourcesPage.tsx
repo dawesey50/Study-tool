@@ -38,6 +38,8 @@ export function SourcesPage() {
     enabled: Boolean(moduleId),
   });
 
+  const { data: health } = useQuery({ queryKey: ['health'], queryFn: api.health });
+
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['sources', moduleId] });
     queryClient.invalidateQueries({ queryKey: ['module', moduleId] });
@@ -119,6 +121,17 @@ export function SourcesPage() {
             {ACCEPT.replace(/\./g, '').replace(/,/g, ', ')} · drop a whole module at once and
             walk away
           </span>
+          {/*
+            The size limit is worth stating before you hit it. A scanned
+            textbook can be several hundred megabytes, and finding the ceiling
+            by having an upload fail is a poor way to learn it.
+          */}
+          {health && (
+            <span className="mt-1 text-2xs text-faint">
+              Up to {health.maxUploadMb} MB per file — raise MAX_UPLOAD_MB in .env for anything
+              bigger
+            </span>
+          )}
         </label>
 
         <UploadQueueList

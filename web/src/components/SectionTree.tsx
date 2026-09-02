@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
-import { NavLink, useParams } from 'react-router-dom';
+import { NavLink, useNavigate, useParams } from 'react-router-dom';
 import { api, flattenSections, type SectionNode } from '../lib/api';
 import { Icon } from './ui/Icon';
 import { useToast } from './ui/Toast';
@@ -14,6 +14,7 @@ import { useToast } from './ui/Toast';
  */
 export function SectionTree({ moduleId }: { moduleId: string }) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const toast = useToast();
   const { sectionId: activeId } = useParams<{ sectionId: string }>();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -48,6 +49,23 @@ export function SectionTree({ moduleId }: { moduleId: string }) {
     onError: (error: Error) => toast.error('Could not add a section', error.message),
   });
 
+  /**
+   * The first section is a special case: you are making it because you want
+   * somewhere to write, so it opens straight into its editor. Later ones are
+   * usually you building out the tree, where being thrown into each new
+   * section would get in the way.
+   */
+  const createAndOpen = useMutation({
+    mutationFn: () => api.createSection({ moduleId, title: 'Untitled section' }),
+    onSuccess: (section) => {
+      queryClient.invalidateQueries({ queryKey: ['sections', moduleId] });
+      queryClient.invalidateQueries({ queryKey: ['module', moduleId] });
+      queryClient.invalidateQueries({ queryKey: ['modules'] });
+      navigate(`/modules/${moduleId}/sections/${section.id}`);
+    },
+    onError: (error: Error) => toast.error('Could not add a section', error.message),
+  });
+
   if (isLoading) {
     return (
       <div className="space-y-1 px-2 py-1">
@@ -62,9 +80,14 @@ export function SectionTree({ moduleId }: { moduleId: string }) {
     return (
       <div className="space-y-2 px-2 py-1">
         <p className="text-xs leading-relaxed text-muted">
-          No sections yet. Paste an outline on the module page, or start one here.
+          No sections yet, so there is nowhere to write. Start one here, or paste an outline on
+          the module page.
         </p>
-        <button className="btn btn-sm w-full" onClick={() => create.mutate(null)}>
+        <button
+          className="btn btn-sm w-full"
+          onClick={() => createAndOpen.mutate()}
+          disabled={createAndOpen.isPending}
+        >
           <Icon name="plus" size={13} />
           Add first section
         </button>

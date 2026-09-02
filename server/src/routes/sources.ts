@@ -15,6 +15,30 @@ import { describeLocation } from '../services/search.js';
 const SOURCE_TYPES = ['slides', 'transcript', 'textbook', 'notes', 'past_paper'] as const;
 const ALLOWED_EXTENSIONS = new Set(['.pdf', '.docx', '.txt', '.md', '.vtt', '.srt']);
 
+class FileTooLargeError extends Error {
+  readonly code = 'FST_REQ_FILE_TOO_LARGE';
+}
+
+/**
+ * An oversized upload aborts the multipart stream itself, so the error arrives
+ * from the parts iterator rather than from writing the file — which is why
+ * checking `part.file.truncated` afterwards never fired, and the limit came
+ * back as a bare "request file too large" with no mention of the limit or how
+ * to change it.
+ */
+function isTooLarge(error: unknown): boolean {
+  const { code, statusCode, message } = (error ?? {}) as {
+    code?: string;
+    statusCode?: number;
+    message?: string;
+  };
+  return (
+    code === 'FST_REQ_FILE_TOO_LARGE' ||
+    statusCode === 413 ||
+    /file too large/i.test(message ?? '')
+  );
+}
+
 export async function sourceRoutes(app: FastifyInstance): Promise<void> {
   const db = getDb();
 
@@ -48,54 +72,66 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
     const fields = new Map<string, string>();
     let stored: { filename: string; extension: string; relativePath: string } | null = null;
     let rejection: { code: number; error: string } | null = null;
+    let writtenPath: string | null = null;
+    let currentFilename = 'That file';
 
-    for await (const part of request.parts()) {
-      if (part.type === 'field') {
-        fields.set(part.fieldname, String(part.value));
-        continue;
-      }
+    try {
+      for await (const part of request.parts()) {
+        if (part.type === 'field') {
+          fields.set(part.fieldname, String(part.value));
+          continue;
+        }
 
-      // A second file in one request is ignored, but its stream still has to be
-      // drained or the request will not complete.
-      if (stored || rejection) {
-        await part.toBuffer().catch(() => undefined);
-        continue;
-      }
+        // A second file in one request is ignored, but its stream still has to be
+        // drained or the request will not complete.
+        if (stored || rejection) {
+          await part.toBuffer().catch(() => undefined);
+          continue;
+        }
 
-      const extension = path.extname(part.filename).toLowerCase();
-      if (!ALLOWED_EXTENSIONS.has(extension)) {
-        rejection = {
-          code: 400,
-          error: `Unsupported file type "${extension}". Supported: ${[...ALLOWED_EXTENSIONS].join(', ')}`,
-        };
-        await part.toBuffer().catch(() => undefined);
-        continue;
-      }
+        currentFilename = part.filename;
+        const extension = path.extname(part.filename).toLowerCase();
+        if (!ALLOWED_EXTENSIONS.has(extension)) {
+          rejection = {
+            code: 400,
+            error: `Unsupported file type "${extension}". Supported: ${[...ALLOWED_EXTENSIONS].join(', ')}`,
+          };
+          await part.toBuffer().catch(() => undefined);
+          continue;
+        }
 
-      const relativePath = storedPath('media', 'sources', moduleId, `${sourceId}${extension}`);
-      const absolutePath = fromStoredPath(relativePath);
-      fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+        const relativePath = storedPath('media', 'sources', moduleId, `${sourceId}${extension}`);
+        const absolutePath = fromStoredPath(relativePath);
+        fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+        writtenPath = absolutePath;
 
-      try {
         await pipeline(part.file, fs.createWriteStream(absolutePath));
-      } catch (error) {
-        fs.rmSync(absolutePath, { force: true });
-        rejection = { code: 500, error: `Could not store upload: ${(error as Error).message}` };
-        continue;
-      }
 
-      if (part.file.truncated) {
-        fs.rmSync(absolutePath, { force: true });
-        rejection = {
-          code: 413,
+        // Belt and braces: multipart normally throws on an oversized file
+        // before this is reached, but it can be configured not to.
+        if (part.file.truncated) throw new FileTooLargeError();
+
+        stored = { filename: part.filename, extension, relativePath };
+        writtenPath = null;
+      }
+    } catch (error) {
+      // Half a file on disk is worse than none: ingestion would read it and
+      // report a corrupt PDF rather than the real problem.
+      if (writtenPath) fs.rmSync(writtenPath, { force: true });
+
+      if (isTooLarge(error)) {
+        return reply.code(413).send({
           error:
-            `"${part.filename}" is larger than the ${config.maxUploadMb} MB limit. ` +
-            'Raise MAX_UPLOAD_MB in .env and restart if you need to ingest something bigger.',
-        };
-        continue;
+            `"${currentFilename}" is bigger than the ${config.maxUploadMb} MB upload limit. ` +
+            'Raise MAX_UPLOAD_MB in the .env file in the project folder and restart — ' +
+            'scanned textbooks are often several hundred megabytes.',
+        });
       }
 
-      stored = { filename: part.filename, extension, relativePath };
+      request.log.error(error);
+      return reply.code(500).send({
+        error: `Could not store "${currentFilename}": ${(error as Error).message}`,
+      });
     }
 
     if (rejection) return reply.code(rejection.code).send({ error: rejection.error });

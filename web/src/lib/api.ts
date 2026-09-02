@@ -170,6 +170,7 @@ export interface Health {
   vectorIndex: string;
   vectorBackendRequested: string;
   dataDir: string;
+  maxUploadMb: number;
 }
 
 export type LlmTask =

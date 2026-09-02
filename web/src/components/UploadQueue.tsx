@@ -226,10 +226,22 @@ export function UploadQueueList({
                 )}
               </div>
 
-              <div className="mt-0.5 flex items-baseline gap-2 text-2xs text-muted">
-                <span className="truncate">{item.message}</span>
-                {percent !== null && <span className="tabular-nums">{percent}%</span>}
-              </div>
+              {/*
+                A failure gets the whole message; everything else gets one
+                clipped line. Progress text is repetitive and not worth the
+                space, but truncating "raise MAX_UPLOAD_MB in .env" to its first
+                few words leaves you knowing only that something went wrong.
+              */}
+              {item.status === 'failed' ? (
+                <p className="mt-1 rounded border border-flag/30 bg-flag-soft px-2 py-1 text-2xs leading-relaxed text-flag">
+                  {item.message}
+                </p>
+              ) : (
+                <div className="mt-0.5 flex items-baseline gap-2 text-2xs text-muted">
+                  <span className="truncate">{item.message}</span>
+                  {percent !== null && <span className="tabular-nums">{percent}%</span>}
+                </div>
+              )}
 
               {active && (
                 <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-line">
