@@ -105,6 +105,34 @@ export const config = {
     matchThreshold: num('PAST_PAPER_MATCH_THRESHOLD', 0.55),
   },
 
+  /**
+   * The question engine's gates — §7.3. These are the spec's own numbers and
+   * they are the riskiest guesses in the system: they decide whether a bank of
+   * fifty questions contains fifty different questions or five wearing hats.
+   * Plan v2's Step 7a exists to test exactly this before more is built on it.
+   */
+  questions: {
+    cosineLimit: num('QUESTION_COSINE_LIMIT', 0.85),
+    trigramLimit: num('QUESTION_TRIGRAM_LIMIT', 0.4),
+    /** Tighter against real exam questions: reproducing one is the worst case. */
+    pastPaperLimit: num('QUESTION_PAST_PAPER_LIMIT', 0.75),
+    /** Attempts at one blueprint before resampling it entirely. */
+    strikesPerBlueprint: num('QUESTION_STRIKES', 3),
+    /**
+     * Failed blueprints tolerated per question asked for, before the run gives
+     * up and says the material is exhausted.
+     *
+     * The worst case in model calls is `count * (this + 1) * strikes`, since
+     * the questions that do succeed cost calls as well as the ones that do
+     * not — at the defaults, twenty-seven calls per question requested. That
+     * is the real ceiling on what one request can spend, and it is a large
+     * number: it is a backstop against a pathological model, not a budget.
+     */
+    blueprintAttemptsEach: num('QUESTION_BLUEPRINT_ATTEMPTS', 8),
+    /** Average examiner score below which a question is rejected. */
+    examinerFloor: num('QUESTION_EXAMINER_FLOOR', 4),
+  },
+
   ingest: {
     chunkTargetChars: num('CHUNK_TARGET_CHARS', 1400),
     chunkOverlapChars: num('CHUNK_OVERLAP_CHARS', 180),

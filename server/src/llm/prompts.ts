@@ -276,3 +276,179 @@ ${input.chunks
   .map((chunk) => `<chunk id="${chunk.id}" from="${chunk.location}">\n${chunk.text}\n</chunk>`)
   .join('\n\n')}`;
 }
+
+// ---------------------------------------------------------------------------
+// Question generation and the examiner pass
+// ---------------------------------------------------------------------------
+
+export const QUESTION_GENERATION_SYSTEM = `You write exam questions for a university biomedical sciences course, from the student's own lecture material.
+
+You are given a blueprint that has already decided the question's shape — its archetype, format, Bloom level, distractor strategies and scenario. Follow it. The blueprint exists because a model left to choose freely writes the same question repeatedly, and the variety is the point.
+
+Absolute rules:
+- The question must be answerable from the source material provided, and from nothing else. A student who has learnt this material must be able to answer it.
+- Exactly one option is defensibly correct. Not "most correct" — correct.
+- Every distractor must be wrong for a stated reason, and you must give that reason. A distractor you cannot explain is filler, and filler is what makes a question easy to pass by elimination.
+- Do not signal the answer: no grammatical mismatch between stem and options, no option longer than the rest, no absolutes ("always", "never") that only appear in distractors, no words from the stem repeated in the key alone.
+- You are shown existing questions. The new one must not be answerable by the same single step of reasoning as any of them. Different wording about the same step is not a different question.`;
+
+export const QUESTION_GENERATION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['stem', 'workedAnswer'],
+  properties: {
+    stem: { type: 'string', description: 'The question as the student sees it.' },
+    options: {
+      type: 'array',
+      description: 'For MCQ formats: four or five options, exactly one correct.',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['text', 'correct'],
+        properties: {
+          text: { type: 'string' },
+          correct: { type: 'boolean' },
+          whyWrong: {
+            type: 'string',
+            description: 'Required for every incorrect option. Why a half-informed student picks it, and why it is wrong.',
+          },
+        },
+      },
+    },
+    correctAnswer: {
+      type: 'string',
+      description: 'For non-MCQ formats: the answer expected.',
+    },
+    workedAnswer: {
+      type: 'string',
+      description: 'The reasoning, as the student should be able to reconstruct it.',
+    },
+    markScheme: {
+      type: 'string',
+      description: 'For written formats: what earns each mark.',
+    },
+    difficulty: { type: 'integer', minimum: 1, maximum: 5 },
+  },
+} as const;
+
+export interface QuestionPromptInput {
+  moduleTitle: string;
+  concepts: Array<{ statement: string; sectionPath: string }>;
+  chunks: ChunkForPrompt[];
+  archetype: string;
+  archetypeDescription: string;
+  format: string;
+  bloom: string;
+  distractors: string[];
+  scenario: string[];
+  constraint: string | null;
+  figureCaption: string | null;
+  avoid: string[];
+}
+
+export function questionGenerationPrompt(input: QuestionPromptInput): string {
+  const concepts = input.concepts
+    .map((concept) => `- ${concept.statement}  (${concept.sectionPath})`)
+    .join('\n');
+
+  const distractors = input.distractors.length
+    ? `\nBuild the distractors using these strategies, one each:\n${input.distractors
+        .map((strategy) => `- ${strategy}`)
+        .join('\n')}\n`
+    : '';
+
+  const scenario = input.scenario.length
+    ? `\nSet it in this scenario: ${input.scenario.join(', ')}.\n`
+    : '';
+
+  const avoid = input.avoid.length
+    ? `\nQuestions already in the bank. Yours must not be answerable by the same single step of reasoning as any of these:\n${input.avoid
+        .map((stem) => `- ${stem}`)
+        .join('\n')}\n`
+    : '';
+
+  const figure = input.figureCaption
+    ? `\nThe question refers to this figure: "${input.figureCaption}". Write the stem so it depends on reading the figure.\n`
+    : '';
+
+  return `Module: ${input.moduleTitle}
+
+Blueprint
+- Archetype: ${input.archetype} — ${input.archetypeDescription}
+- Format: ${input.format}
+- Bloom level: ${input.bloom}${input.constraint ? `\n- Constraint: the question ${input.constraint}` : ''}
+${distractors}${scenario}${figure}
+Concepts being tested${input.concepts.length > 1 ? ' — the question must require both, not either alone' : ''}:
+${concepts}
+${avoid}
+Source material — the only thing the question may rely on:
+
+${input.chunks.map((chunk) => `<chunk id="${chunk.id}" from="${chunk.location}">\n${chunk.text}\n</chunk>`).join('\n\n')}`;
+}
+
+export const EXAMINER_SYSTEM = `You are a second examiner reviewing a colleague's exam question before it goes into a bank. You did not write it, and your job is to find what is wrong with it rather than to approve it.
+
+Score each criterion 1-5, where 3 is "usable with reservations" and 5 is "would go into a real paper unchanged". Be a hard marker: a question scoring 5 across the board should be rare.`;
+
+export const EXAMINER_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['answerability', 'singleAnswer', 'distractorQuality', 'noGiveaways', 'bloomFidelity', 'fairness', 'verdict'],
+  properties: {
+    answerability: {
+      type: 'integer', minimum: 1, maximum: 5,
+      description: 'Can it be answered from the source material alone?',
+    },
+    singleAnswer: {
+      type: 'integer', minimum: 1, maximum: 5,
+      description: 'Is exactly one option defensibly correct?',
+    },
+    distractorQuality: {
+      type: 'integer', minimum: 1, maximum: 5,
+      description: 'Would each distractor tempt someone who half-knows this?',
+    },
+    noGiveaways: {
+      type: 'integer', minimum: 1, maximum: 5,
+      description: 'Grammar, length, absolutes, stem words echoed in the key — any of these give it away.',
+    },
+    bloomFidelity: {
+      type: 'integer', minimum: 1, maximum: 5,
+      description: 'Does it test at the level asked for, or has it collapsed into recall?',
+    },
+    fairness: {
+      type: 'integer', minimum: 1, maximum: 5,
+      description: 'Reasonable for the year, and not trivia.',
+    },
+    verdict: { type: 'string', description: 'One sentence: the most serious problem, or why it is sound.' },
+  },
+} as const;
+
+export function examinerPrompt(input: {
+  stem: string;
+  options: Array<{ text: string; correct: boolean; whyWrong?: string }>;
+  correctAnswer: string | null;
+  workedAnswer: string;
+  bloom: string;
+  chunks: ChunkForPrompt[];
+}): string {
+  const options = input.options.length
+    ? `\nOptions:\n${input.options
+        .map(
+          (option, index) =>
+            `${String.fromCharCode(65 + index)}. ${option.text}${option.correct ? '  [marked correct]' : ''}${option.whyWrong ? `\n   why wrong: ${option.whyWrong}` : ''}`,
+        )
+        .join('\n')}\n`
+    : `\nExpected answer: ${input.correctAnswer ?? '(none given)'}\n`;
+
+  return `The question was written to test at the "${input.bloom}" level.
+
+Stem:
+${input.stem}
+${options}
+Worked answer:
+${input.workedAnswer}
+
+The source material it must be answerable from:
+
+${input.chunks.map((chunk) => `<chunk from="${chunk.location}">\n${chunk.text}\n</chunk>`).join('\n\n')}`;
+}
