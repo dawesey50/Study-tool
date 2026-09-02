@@ -8,6 +8,8 @@ import { ConfirmProvider } from './components/ui/Confirm';
 import { ToastProvider } from './components/ui/Toast';
 import { ModulePage } from './pages/ModulePage';
 import { ModulesPage } from './pages/ModulesPage';
+import { PracticePage } from './pages/PracticePage';
+import { QuestionsPage } from './pages/QuestionsPage';
 import { SectionPage } from './pages/SectionPage';
 import { SourcesPage } from './pages/SourcesPage';
 import './index.css';
@@ -35,6 +37,8 @@ const router = createBrowserRouter([
       { index: true, element: <ModulesPage /> },
       { path: 'modules/:moduleId', element: <ModulePage /> },
       { path: 'modules/:moduleId/sources', element: <SourcesPage /> },
+      { path: 'modules/:moduleId/questions', element: <QuestionsPage /> },
+      { path: 'modules/:moduleId/practice', element: <PracticePage /> },
       { path: 'modules/:moduleId/sections/:sectionId', element: <SectionPage /> },
       { path: '*', element: <Navigate to="/" replace /> },
     ],

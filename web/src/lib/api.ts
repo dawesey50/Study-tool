@@ -433,6 +433,92 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+// ---------------------------------------------------------------------------
+// Questions
+// ---------------------------------------------------------------------------
+
+export type QuestionFormat = 'mcq' | 'saq' | 'essay' | 'data_interp' | 'calculation' | 'ema';
+
+export interface McqOption {
+  text: string;
+  correct: boolean;
+  whyWrong?: string;
+}
+
+export interface Question {
+  id: string;
+  moduleId: string;
+  blueprintJson: Record<string, unknown> | null;
+  conceptIds: string[] | null;
+  sectionIds: string[] | null;
+  format: QuestionFormat;
+  stem: string;
+  optionsJson: McqOption[] | null;
+  correctAnswer: string | null;
+  workedAnswer: string | null;
+  markScheme: string | null;
+  figureId: string | null;
+  bloomLevel: string | null;
+  difficultyEst: number | null;
+  source: 'generated' | 'past_paper';
+  timesServed: number;
+  timesCorrect: number;
+  criticScore: number | null;
+  createdAt: number;
+  sectionPaths: string[];
+  accuracy: number | null;
+}
+
+export interface QuestionBank {
+  questions: Question[];
+  /** Set-level properties no single question can show. */
+  answerKeys: { distribution: number[]; longestRun: number; counted: number };
+}
+
+export interface QuestionJob {
+  moduleId: string;
+  phase: 'queued' | 'generating' | 'done' | 'failed' | 'cancelled';
+  done: number;
+  total: number;
+  message: string;
+  startedAt: number;
+  finishedAt?: number;
+  costGbp?: number;
+  error?: string;
+  result?: {
+    accepted: number;
+    requested: number;
+    rejected: Array<{ stem: string; reason: string; detail?: string }>;
+    blueprintsResampled: number;
+    admittedWithoutEmbeddings: number;
+    stoppedBecause: 'asked_for' | 'ran_out_of_blueprints' | 'cancelled';
+  };
+}
+
+/** A question as practice serves it — deliberately without the answer. */
+export interface PracticeQuestion {
+  id: string;
+  format: QuestionFormat;
+  stem: string;
+  bloomLevel: string | null;
+  figureId: string | null;
+  sectionPaths: string[];
+  options: string[];
+}
+
+export interface AttemptResult {
+  attemptId: string;
+  correct: boolean | null;
+  marked: boolean;
+  correctIndex: number | null;
+  options: McqOption[] | null;
+  correctAnswer: string | null;
+  workedAnswer: string | null;
+  markScheme: string | null;
+  confidentlyWrong: boolean;
+  conceptIds: string[];
+}
+
 export const api = {
   health: () => request<Health>('/api/health'),
 
@@ -588,6 +674,55 @@ export const api = {
       { method: 'POST' },
     ),
   deleteSnapshot: (id: string) => request<void>(`/api/snapshots/${id}`, { method: 'DELETE' }),
+
+  listQuestions: (
+    moduleId: string,
+    query: { sectionId?: string; format?: string; source?: string } = {},
+  ) => {
+    const params = new URLSearchParams(
+      Object.entries(query).filter(([, value]) => Boolean(value)) as [string, string][],
+    );
+    const suffix = params.toString() ? `?${params}` : '';
+    return request<QuestionBank>(`/api/modules/${moduleId}/questions${suffix}`);
+  },
+  generateQuestions: (
+    moduleId: string,
+    body: { count: number; sectionIds?: string[]; skipExaminer?: boolean },
+  ) =>
+    request<QuestionJob>(`/api/modules/${moduleId}/questions/generate`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  getQuestionJob: (moduleId: string) =>
+    request<QuestionJob>(`/api/modules/${moduleId}/questions/job`),
+  cancelQuestions: (moduleId: string) =>
+    request<{ cancelling: boolean }>(`/api/modules/${moduleId}/questions/cancel`, {
+      method: 'POST',
+    }),
+  deleteQuestion: (id: string) => request<void>(`/api/questions/${id}`, { method: 'DELETE' }),
+
+  getPractice: (moduleId: string, query: { count?: number; sectionId?: string } = {}) => {
+    const params = new URLSearchParams();
+    if (query.count) params.set('count', String(query.count));
+    if (query.sectionId) params.set('sectionId', query.sectionId);
+    const suffix = params.toString() ? `?${params}` : '';
+    return request<{ questions: PracticeQuestion[] }>(
+      `/api/modules/${moduleId}/practice${suffix}`,
+    );
+  },
+  submitAttempt: (
+    questionId: string,
+    body: { optionIndex?: number; text?: string; confidence?: number; secondsTaken?: number },
+  ) =>
+    request<AttemptResult>(`/api/questions/${questionId}/attempt`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  markAttempt: (attemptId: string, correct: boolean) =>
+    request<{ attemptId: string; correct: boolean; conceptIds: string[] }>(
+      `/api/attempts/${attemptId}/mark`,
+      { method: 'POST', body: JSON.stringify({ correct }) },
+    ),
 
   llmStatus: () => request<LlmStatus>('/api/llm/status'),
   llmUsage: () => request<LlmUsage>('/api/llm/usage'),

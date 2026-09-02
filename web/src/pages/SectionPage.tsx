@@ -102,15 +102,7 @@ export function SectionPage() {
             phase="Phase 5"
           />
         )}
-        {tab === 'practice' && (
-          <Placeholder
-            icon="question"
-            title="Generated practice questions"
-            body="The question engine — blueprint sampling, a novelty gate and a separate examiner
-                  pass — needs the concepts that get extracted from these sources first."
-            phase="Phase 3"
-          />
-        )}
+        {tab === 'practice' && <SectionPractice moduleId={moduleId} sectionId={sectionId} />}
         {tab === 'sources' && (
           <SourcesTab moduleId={moduleId} sectionId={sectionId} sources={sectionSources} />
         )}
@@ -303,6 +295,87 @@ function SourceChunks({ source, sectionId }: { source: Source; sectionId: string
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * The section's slice of the question bank, and a way into practice scoped to
+ * it. The full bank lives at the module level, because the properties worth
+ * checking — how the answer keys fall, whether the same letter runs — are
+ * properties of the whole set and a per-section view of them would mislead.
+ */
+function SectionPractice({ moduleId, sectionId }: { moduleId: string; sectionId: string }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['questions', moduleId, sectionId],
+    queryFn: () => api.listQuestions(moduleId, { sectionId }),
+  });
+
+  if (isLoading) return <div className="skeleton h-32" />;
+
+  const questions = data?.questions ?? [];
+
+  if (questions.length === 0) {
+    return (
+      <div className="card p-6 text-center">
+        <p className="text-sm text-muted">
+          No questions for this section yet. They are sampled from its concept list, so extract
+          concepts first, then generate from the bank.
+        </p>
+        <Link className="btn btn-primary mt-4 inline-flex" to={`/modules/${moduleId}/questions`}>
+          <Icon name="sparkle" size={14} className="mr-1" />
+          Generate questions
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
+            Practice
+          </h2>
+          <p className="mt-1 text-xs text-muted">
+            {questions.length} question{questions.length === 1 ? '' : 's'} touch this section.
+          </p>
+        </div>
+        <Link
+          className="btn btn-primary shrink-0"
+          to={`/modules/${moduleId}/practice?section=${sectionId}`}
+        >
+          <Icon name="question" size={14} className="mr-1" />
+          Start
+        </Link>
+      </div>
+
+      <ul className="mt-4 space-y-2">
+        {questions.map((question) => (
+          <li key={question.id} className="card p-3">
+            <p className="text-sm leading-relaxed">{question.stem}</p>
+            <div className="mt-1.5 flex flex-wrap gap-x-2 text-[11px] text-muted">
+              <span className="rounded bg-line px-1.5 py-0.5 uppercase tracking-wide">
+                {question.format}
+              </span>
+              {question.bloomLevel && <span>{question.bloomLevel}</span>}
+              {question.timesServed > 0 && (
+                <span>
+                  · {question.timesCorrect}/{question.timesServed} right
+                </span>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-3 text-xs text-muted">
+        Answers are deliberately not shown here — the full record, with the reasoning and the
+        blueprint behind each question, is in the{' '}
+        <Link className="underline underline-offset-2" to={`/modules/${moduleId}/questions`}>
+          question bank
+        </Link>
+        .
+      </p>
     </div>
   );
 }

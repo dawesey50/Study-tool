@@ -17,6 +17,7 @@
     "typecheck": "npm run typecheck --workspace server && npm run typecheck --workspace web",
     "test": "npm run test --workspace server && npm run test --workspace web",
     "test:e2e": "node e2e/smoke.mjs",
+    "test:e2e:questions": "node e2e/questions.mjs",
     "app": "node scripts/launch.mjs",
     "doctor": "node scripts/doctor.mjs",
     "seed": "node scripts/seed.mjs",
