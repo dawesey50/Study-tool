@@ -246,6 +246,68 @@ export interface LlmUsage {
   }>;
 }
 
+export type ConceptType =
+  | 'fact'
+  | 'mechanism'
+  | 'pathway'
+  | 'relationship'
+  | 'calculation'
+  | 'clinical'
+  | 'experimental'
+  | 'anatomy';
+
+export interface Concept {
+  id: string;
+  sectionId: string;
+  statement: string;
+  type: ConceptType;
+  bloomCeiling: string | null;
+  difficulty: number | null;
+  examinableFlag: boolean;
+  emphasisScore: number | null;
+  sourceChunkIds: string[] | null;
+  createdAt: number;
+  embedded: boolean;
+  citations: string[];
+  ownedElsewhere: {
+    conceptId: string;
+    sectionId: string;
+    sectionNumber: string;
+    sectionTitle: string;
+    note: string | null;
+  } | null;
+}
+
+export interface PlausibilityWarning {
+  concepts: number;
+  sourceChars: number;
+  expected: number;
+  verdict: 'too_few' | 'too_many';
+  message: string;
+}
+
+export interface SectionConcepts {
+  sectionId: string;
+  sourceChars: number;
+  sourceChunks: number;
+  plausibility: PlausibilityWarning | null;
+  concepts: Concept[];
+}
+
+export interface ConceptJob {
+  moduleId: string;
+  phase: 'queued' | 'extracting' | 'linking' | 'done' | 'failed' | 'cancelled';
+  done: number;
+  total: number;
+  message: string;
+  results: Array<{ sectionId: string; kept: number; merged: number; uncited: number }>;
+  skipped: Array<{ sectionId: string; sectionPath: string; reason: string }>;
+  links?: number;
+  costGbp?: number;
+  error?: string;
+  running?: boolean;
+}
+
 export type SnapshotReason = 'before_generation' | 'before_restore' | 'manual';
 
 export interface Snapshot {
@@ -437,6 +499,29 @@ export const api = {
       chunks: { pending: number; embedded: number };
       noteBlocks: { pending: number; embedded: number };
     }>('/api/embeddings/backfill', { method: 'POST', body: JSON.stringify({}) }),
+
+  getConcepts: (sectionId: string) =>
+    request<SectionConcepts>(`/api/sections/${sectionId}/concepts`),
+  extractConcepts: (moduleId: string, body: { sectionIds?: string[]; fresh?: boolean } = {}) =>
+    request<ConceptJob>(`/api/modules/${moduleId}/concepts/extract`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  getConceptJob: (moduleId: string) =>
+    request<ConceptJob>(`/api/modules/${moduleId}/concepts/job`),
+  cancelExtraction: (moduleId: string) =>
+    request<{ cancelled: boolean }>(`/api/modules/${moduleId}/concepts/cancel`, {
+      method: 'POST',
+    }),
+  updateConcept: (
+    id: string,
+    body: { statement?: string; type?: ConceptType; examinableFlag?: boolean },
+  ) => request<Concept>(`/api/concepts/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteConcept: (id: string) => request<void>(`/api/concepts/${id}`, { method: 'DELETE' }),
+  getConceptSources: (id: string) =>
+    request<Array<{ id: string; text: string; location: string }>>(
+      `/api/concepts/${id}/sources`,
+    ),
 
   listSnapshots: (moduleId: string) => request<Snapshot[]>(`/api/modules/${moduleId}/snapshots`),
   takeSnapshot: (moduleId: string, body: { sectionId?: string; label?: string } = {}) =>

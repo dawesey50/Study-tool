@@ -37,6 +37,25 @@ export function stubCalls(): ProviderRequest[] {
   return calls;
 }
 
+/** The smallest document a schema will accept: empty arrays, absent optionals. */
+function emptyForSchema(schema: Record<string, unknown>): unknown {
+  const type = schema.type as string | undefined;
+  if (type === 'array') return [];
+  if (type === 'string') return '';
+  if (type === 'number' || type === 'integer') return 0;
+  if (type === 'boolean') return false;
+  if (type !== 'object') return null;
+
+  const properties = (schema.properties ?? {}) as Record<string, Record<string, unknown>>;
+  const required = (schema.required ?? []) as string[];
+  const out: Record<string, unknown> = {};
+  for (const key of required) {
+    const property = properties[key];
+    if (property) out[key] = emptyForSchema(property);
+  }
+  return out;
+}
+
 /** Rough, and only used by the stub: real providers report their own counts. */
 function estimateTokens(text: string): number {
   return Math.max(1, Math.ceil(text.length / 4));
@@ -53,10 +72,18 @@ export const stubProvider: Provider = {
     const index = calls.length;
     calls.push(request);
 
+    const scripted = script.respond?.(request, index);
+    if (scripted instanceof Error) throw scripted;
+
+    // A task that asked for JSON gets valid, empty JSON of the right shape.
+    // Returning prose to a structured request would fail at the parse with an
+    // error about the model, which is a confusing way for an offline stub to
+    // behave — "it found nothing" is the honest answer when nothing is scripted.
     const answer =
-      script.respond?.(request, index) ??
-      `stub:${createHash('sha256').update(request.prompt).digest('hex').slice(0, 16)}`;
-    if (answer instanceof Error) throw answer;
+      scripted ??
+      (request.jsonSchema
+        ? JSON.stringify(emptyForSchema(request.jsonSchema))
+        : `stub:${createHash('sha256').update(request.prompt).digest('hex').slice(0, 16)}`);
 
     return {
       text: answer,

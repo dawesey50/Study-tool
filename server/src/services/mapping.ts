@@ -154,6 +154,58 @@ function persist(sourceId: string, proposals: SectionProposal[]): SectionProposa
   return listMappings(sourceId);
 }
 
+/**
+ * Which of a source's chunks belong to a section you picked by hand.
+ *
+ * Confirming a section the matcher never proposed used to attach no chunks at
+ * all: the mapping showed as "confirmed by you" and the section was silently
+ * empty, so extraction found nothing and notes would have been generated from
+ * nothing. Nothing in the interface said so.
+ *
+ * Rather than attaching the whole source — which would give every section the
+ * whole lecture — this scores its chunks against that one section and keeps
+ * the ones that actually match, falling back to all of them when there is
+ * nothing to score with. A section you chose deliberately gets a lower bar
+ * than one the matcher had to propose on its own.
+ */
+export async function chunksForConfirmedSection(
+  sourceId: string,
+  sectionId: string,
+): Promise<string[]> {
+  const db = getDb();
+  const source = db.select().from(schema.sources).where(eq(schema.sources.id, sourceId)).get();
+  if (!source) return [];
+
+  const chunks = db
+    .select({ id: schema.chunks.id, embedding: schema.chunks.embedding })
+    .from(schema.chunks)
+    .where(eq(schema.chunks.sourceId, sourceId))
+    .all();
+  if (chunks.length === 0) return [];
+
+  const sections = flatten(getTree(source.moduleId));
+  const section = sections.find((node) => node.id === sectionId);
+  if (!section) return [];
+
+  const [sectionVector] = await embedSafely([profileOf(section, sections)]);
+  if (!sectionVector) return chunks.map((chunk) => chunk.id);
+
+  const scored = chunks
+    .map((chunk) => ({ id: chunk.id, vector: fromBlob(chunk.embedding as Buffer | null) }))
+    .filter((entry): entry is { id: string; vector: Float32Array } => entry.vector !== null)
+    .map((entry) => ({ id: entry.id, score: cosine(entry.vector, sectionVector) }));
+
+  if (scored.length === 0) return chunks.map((chunk) => chunk.id);
+
+  const matched = scored
+    .filter((entry) => entry.score >= CHUNK_MATCH_THRESHOLD)
+    .map((entry) => entry.id);
+
+  // You said this source belongs here. If nothing clears the bar, that is a
+  // statement about the threshold, not a reason to attach nothing.
+  return matched.length > 0 ? matched : chunks.map((chunk) => chunk.id);
+}
+
 export function listMappings(sourceId: string): SectionProposal[] {
   const db = getDb();
   const rows = db

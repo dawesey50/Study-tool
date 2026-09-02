@@ -1,21 +1,30 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { ConceptList } from '../components/ConceptList';
 import { NoteEditor } from '../components/NoteEditor';
 import { api, type Chunk, type Source } from '../lib/api';
 import { Icon, type IconName } from '../components/ui/Icon';
 import { useToast } from '../components/ui/Toast';
 
-type Tab = 'notes' | 'exam' | 'practice' | 'sources';
+type Tab = 'notes' | 'concepts' | 'exam' | 'practice' | 'sources';
 
 const TABS: Array<{ id: Tab; label: string; icon: IconName }> = [
   { id: 'notes', label: 'Notes', icon: 'notes' },
+  { id: 'concepts', label: 'Concepts', icon: 'sparkle' },
   { id: 'exam', label: 'Exam questions', icon: 'file' },
   { id: 'practice', label: 'Practice', icon: 'question' },
   { id: 'sources', label: 'Sources', icon: 'layers' },
 ];
 
-/** A section is a workspace with four tabs, per §4 of the spec. */
+/**
+ * A section is a workspace with tabs, per §4 of the spec.
+ *
+ * Concepts is a fifth beyond the four §4 names, because the concept list is
+ * not an implementation detail: notes are generated against it, coverage is
+ * measured against it and questions are sampled from it, so everything later
+ * inherits whatever is in it. It has to be somewhere you read and correct.
+ */
 export function SectionPage() {
   const { moduleId, sectionId } = useParams<{ moduleId: string; sectionId: string }>();
   const [tab, setTab] = useState<Tab>('notes');
@@ -83,6 +92,7 @@ export function SectionPage() {
 
       <div className="py-7">
         {tab === 'notes' && <NoteEditor sectionId={sectionId} />}
+        {tab === 'concepts' && <ConceptList moduleId={moduleId} sectionId={sectionId} />}
         {tab === 'exam' && (
           <Placeholder
             icon="file"

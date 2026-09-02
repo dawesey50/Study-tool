@@ -336,6 +336,15 @@ await step('a restore point brings destroyed notes back', async () => {
   await page.getByText(/Myelination increases conduction velocity/).waitFor({ timeout: 10_000 });
 });
 
+await step('the concepts tab is honest about having nothing yet', async () => {
+  await page.getByRole('button', { name: 'Concepts' }).click();
+  await page.getByText('Nothing extracted yet').waitFor({ timeout: 10_000 });
+  // It has to say what it would read from, not just that it is empty.
+  await page.getByText(/chunks of material are mapped/).waitFor({ timeout: 5000 });
+  await page.getByRole('button', { name: /Extract concepts/ }).waitFor({ timeout: 5000 });
+  await page.getByRole('button', { name: 'Notes' }).click();
+});
+
 await step('search finds the note and the slide behind it', async () => {
   await page.getByPlaceholder(/Search everything/).fill('saltatory');
   await page.waitForTimeout(900);

@@ -70,6 +70,18 @@ export const config = {
    */
   snapshotsKept: num('SNAPSHOTS_KEPT', 20),
 
+  /**
+   * The plausibility check on a section's concept count. Every number here is
+   * a guess until real lecture material has been through, which is why they
+   * are settings rather than constants.
+   */
+  concepts: {
+    charsPerConcept: num('CONCEPT_CHARS_EACH', 900),
+    plausibleLow: num('CONCEPT_PLAUSIBLE_LOW', 0.2),
+    plausibleHigh: num('CONCEPT_PLAUSIBLE_HIGH', 4),
+    minCharsToJudge: num('CONCEPT_MIN_CHARS', 2500),
+  },
+
   ingest: {
     chunkTargetChars: num('CHUNK_TARGET_CHARS', 1400),
     chunkOverlapChars: num('CHUNK_OVERLAP_CHARS', 180),

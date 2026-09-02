@@ -8,7 +8,9 @@ Audited 15 August 2026 against `studytoolspec.md` (spec v2).
 > at once, a running ingest can be cancelled, and a restore point is taken
 > automatically before anything rewrites notes in bulk — so the first time
 > `locked` and `user_written` are tested against a real generator, a bad run is
-> survivable. **Step 3 — the LLM layer — is
+> survivable. **Step 4 — concept extraction and
+> ownership — is built too**, though its prompt is unvalidated until real
+> lecture material has been through it, which is Step 1's job. **Step 3 — the LLM layer — is
 > also complete**, which closes P1-4: `llm.complete({ task, prompt, images? })`
 > routes by config, falls back between providers, records every call's tokens
 > and cost per module, caches identical requests, and enforces the three limits
@@ -18,8 +20,10 @@ Audited 15 August 2026 against `studytoolspec.md` (spec v2).
 > degraded to plain prose, which had to happen before generation writes them
 > rather than after. The findings below stand; the
 > ordering has been replaced by v2's, which makes the reality check on real
-> material a blocking first step — and that step, Step 1, is still yours to run
-> and still blocks Step 4.
+> material a blocking first step — and that step, Step 1, is still yours to run.
+> It no longer blocks any code, but it is what tells you whether the extraction
+> prompt and the mapping thresholds are any good, and Step 5 should not start
+> until it has.
 
 **Method.** Every claim below was checked against the code or measured, not
 recalled. Feature presence was verified by finding the route or component that
@@ -44,17 +48,17 @@ which is where the spec's two differentiators live — are not started.
 | §3 Frontend stack | **Mostly** | React/TS/Vite/Tailwind/TanStack/TipTap all in use. **KaTeX and Mermaid are installed but never imported** — equations and pathway diagrams do not render |
 | §3 Backend stack | **Done** | Fastify, better-sqlite3, Drizzle, sqlite-vec, local media |
 | §3 Ingestion libraries | **Mostly** | pdfjs, mammoth, transformers.js in use. `pdf-to-img` never added, so there are no page thumbnails |
-| §3 LLM routing (`llm.complete`) | **Not started** | No provider layer exists at all. Everything in §6–§9 depends on this |
+| §3 LLM routing (`llm.complete`) | **Done** | One interface, task-to-model mapping in config, provider fallback, cost ledger and three spending limits |
 | §4 Section hierarchy, drag-and-drop, stable UUIDs | **Done** | Numbers derived from position; verified that reordering renumbers without breaking links |
 | §4 Hierarchy by hand / grow as you go | **Done** | Paste an outline, or add sections individually |
 | §4 Hierarchy *proposed* by an LLM | **Not started** | Spec calls this "the default flow" |
-| §4 Four tabs per section | **Half** | Notes and Sources work; Exam questions and Practice are honest placeholders |
+| §4 Four tabs per section | **Half** | Notes, Concepts and Sources work; Exam questions and Practice are honest placeholders |
 | §5 Data model | **Done** | All 15 tables exist, including those nothing writes to yet |
 | §6.1 Note generation pipeline | **Not started** | |
 | §6.2 Coverage check and badge | **Not started** | Only referenced in comments |
 | §6.3 Note format config template | **Not started** | |
 | §6.4 Figure placement by similarity | **Not started** | Figures are extracted and listed, never placed |
-| §6.5 Cross-referencing instead of repeating | **Half** | The crossref block renders properly and resolves to a live section number; automatic ownership assignment is Step 4 |
+| §6.5 Cross-referencing instead of repeating | **Mostly** | The crossref block renders and resolves to a live section number; ownership is assigned across the module at ~0.9 cosine. Generation writing crossref blocks instead of prose is Step 5 |
 | §6.6 Editing and edit preservation | **Done** | Blocks carry origin and a lock; locked blocks reject edits |
 | §6.6 Section action toolbar | **Not started** | No "explain further", "rewrite", "go deeper" |
 | §7 Question engine | **Not started** | Tables exist; nothing populates them |
@@ -62,7 +66,7 @@ which is where the spec's two differentiators live — are not started.
 | §9 Exam mode | **Not started** | |
 | §10 Sidebar tree, global search | **Done** | Keyword and semantic search, merged |
 | §10 Dashboard, concept map, command palette | **Not started** | Some shortcuts exist (⌘K, ⌘,, ⌘B) but no palette |
-| §12 Cost estimate | **Not tracked** | Nothing measures spend against the ~£7/module budget |
+| §12 Cost estimate | **Done** | Every call recorded and priced, aggregated per module in Settings against the cap |
 | §13 Things to deliberately not do | **Respected** | No audio, no accounts, no chat-first UI, no topic-string questions, no silent overwrites, no decorative figures |
 
 ---

@@ -9,7 +9,11 @@ import { getDb, schema } from '../db/index.js';
 import { cancelIngest, getJob, startIngest } from '../ingest/jobs.js';
 import { newId } from '../lib/ids.js';
 import { fromStoredPath, storedPath, toMediaUrl } from '../lib/paths.js';
-import { listMappings, proposeSectionsForSource } from '../services/mapping.js';
+import {
+  chunksForConfirmedSection,
+  listMappings,
+  proposeSectionsForSource,
+} from '../services/mapping.js';
 import { describeLocation } from '../services/search.js';
 
 const SOURCE_TYPES = ['slides', 'transcript', 'textbook', 'notes', 'past_paper'] as const;
@@ -317,6 +321,18 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
       .all();
     const previous = new Map(existing.map((row) => [row.sectionId, row]));
 
+    // A section you ticked that the matcher never proposed has no chunk range
+    // to inherit. Leaving it null used to make the mapping a lie: confirmed in
+    // the interface, empty everywhere it mattered.
+    const ranges = new Map<string, string[]>();
+    for (const sectionId of valid) {
+      const inherited = previous.get(sectionId)?.chunkRange?.chunkIds;
+      ranges.set(
+        sectionId,
+        inherited?.length ? inherited : await chunksForConfirmedSection(id, sectionId),
+      );
+    }
+
     db.transaction((tx) => {
       tx.delete(schema.sourceSections).where(eq(schema.sourceSections.sourceId, id)).run();
       for (const sectionId of valid) {
@@ -324,8 +340,7 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
           .values({
             sourceId: id,
             sectionId,
-            // Keep the chunk range the matcher worked out, if it had one.
-            chunkRange: previous.get(sectionId)?.chunkRange ?? null,
+            chunkRange: { chunkIds: ranges.get(sectionId) ?? [] },
             score: previous.get(sectionId)?.score ?? null,
             confirmed: true,
           })

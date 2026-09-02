@@ -24,7 +24,8 @@ covers all of them, so those phases add behaviour rather than reshaping data.
 |---|---|
 | 1 — Schema, ingestion, section tree, block note editor, search | Done |
 | 2 — Model routing, cost accounting, spending limits | Done |
-| 2 — Concept extraction, note generation, coverage check, cross-referencing | Not started |
+| 2 — Concept extraction and ownership | Done, prompt unvalidated |
+| 2 — Note generation, coverage check | Not started |
 | 3 — Question engine: blueprints, novelty gate, examiner pass | Not started |
 | 4 — FSRS scheduling at concept level, mastery rollup | Not started |
 | 5 — Past papers, timed exams, concept map | Not started |
@@ -144,6 +145,20 @@ keeping it in storage was not.
 
 Storage is markdown rather than the editor's own JSON, so it stays readable,
 diffable, and directly usable as both input and output for a model.
+
+**Concepts are the unit everything else references.** Extraction reads the
+chunks mapped to a section and writes down each specific claim that could be
+examined, with the slide or page it came from. Notes are generated against that
+list, coverage is measured against it and questions are sampled from it — so
+everything later inherits whatever is in it, which is why it is a list you read
+and correct rather than a hidden intermediate.
+
+Two things hold whatever the model returns. A concept citing chunks that are
+not in the section is dropped rather than stored, because a claim that cannot
+be traced back to your material is one the model knew already. And near-
+identical concepts are merged: over-splitting is what makes a coverage badge
+lie, since five restatements of one idea are all "covered" by the sentence that
+says it once.
 
 **No feature code knows a model name.** Everything goes through one call —
 `llm.complete({ task, prompt, images? })` — and the task is mapped to a model in

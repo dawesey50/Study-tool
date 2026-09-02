@@ -52,7 +52,12 @@ material:
   and cross-references. This one matters more than its size suggests: it runs
   on every save, and a bug there does not crash anything, it quietly rewrites
   your notes into something slightly wrong until you notice weeks later.
-
+- `concepts.test.ts` — extraction, dedupe and ownership, all against the stub.
+  It says nothing about whether the extraction *prompt* is any good — that
+  needs real material and your judgement. What it does prove is what must hold
+  whatever the model returns: an uncitable concept is dropped, restatements
+  merge, ids survive a re-run so nothing pointing at a concept is orphaned, and
+  a spending limit stops the whole job rather than being hit once per section.
 - `snapshots.test.ts` — restore points. The central test simulates the failure
   they exist for rather than waiting for it: it takes a restore point through
   the same seam generation will use, then deletes and overwrites everything in
@@ -184,6 +189,17 @@ real API.
    `LLM_MONTHLY_CAP_GBP` is set somewhere useful. The default is £15 against a
    spec budget of about £7, which is deliberately loose — a cap that fires
    during ordinary work teaches you to raise it without reading it.
+5. **Read a concept list for a lecture you know well** and decide whether you
+   agree with it. This is plan v2's done-when for concept extraction and only
+   you can run it. Concepts must be atomic and specific: "the brain has several
+   regions" is too vague to write a question from, and if extraction is
+   producing statements like that, the prompt in
+   `server/src/llm/prompts.ts` needs fixing there, where it is cheap, rather
+   than after notes and questions have both inherited it.
+6. **Check the concept count warning is not crying wolf.** It fires only on
+   extremes and every number behind it is a guess — a slide deck is terse and
+   dense in claims, a transcript verbose and sparse. `CONCEPT_CHARS_EACH` and
+   the band either side of it are in `.env`.
 
 ## Common problems
 
