@@ -308,6 +308,31 @@ export interface ConceptJob {
   running?: boolean;
 }
 
+export interface Coverage {
+  total: number;
+  covered: number;
+  uncovered: Array<{
+    conceptId: string;
+    statement: string;
+    examinable: boolean;
+    score: number;
+  }>;
+  passes: number;
+  hitPassLimit: boolean;
+  stoppedEarly: boolean;
+  measured: boolean;
+}
+
+export interface GenerationResult {
+  sectionId: string;
+  blocksWritten: number;
+  blocksPreserved: number;
+  figuresPlaced: number;
+  coverage: Coverage;
+  snapshotId: string;
+  costUsd: number;
+}
+
 export type SnapshotReason = 'before_generation' | 'before_restore' | 'manual';
 
 export interface Snapshot {
@@ -499,6 +524,12 @@ export const api = {
       chunks: { pending: number; embedded: number };
       noteBlocks: { pending: number; embedded: number };
     }>('/api/embeddings/backfill', { method: 'POST', body: JSON.stringify({}) }),
+
+  generateNotes: (sectionId: string, body: { fresh?: boolean } = {}) =>
+    request<GenerationResult>(`/api/sections/${sectionId}/notes/generate`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 
   getConcepts: (sectionId: string) =>
     request<SectionConcepts>(`/api/sections/${sectionId}/concepts`),

@@ -14,18 +14,23 @@ accounts, no cloud, no lock-in.
 module's section hierarchy, ingest sources, and get an organised, searchable,
 correctly cited store of your material with figures pulled out of the PDFs.
 
-The model layer underneath Phase 2 is now in place — routing, cost accounting
-and the limits that stop a runaway — but nothing generates yet. Notes are still
-yours to write. Concept extraction, generated notes, the question engine,
-spaced repetition and exam mode are Phases 2–5, and the database schema already
-covers all of them, so those phases add behaviour rather than reshaping data.
+Phase 2 is built: the model layer with its cost accounting and spending limits,
+concept extraction, note generation and the coverage check. Every prompt behind
+it is a first draft that has never seen a real lecture, so what remains is
+reading its output on your own material and revising it — `npm run simulate`
+shows the pipeline running end to end on a made-up lecture, which proves the
+plumbing but says nothing about the writing.
+
+The question engine, spaced repetition and exam mode are Phases 3–5. The
+database schema already covers all of them, so those phases add behaviour
+rather than reshaping data.
 
 | Phase | Status |
 |---|---|
 | 1 — Schema, ingestion, section tree, block note editor, search | Done |
 | 2 — Model routing, cost accounting, spending limits | Done |
 | 2 — Concept extraction and ownership | Done, prompt unvalidated |
-| 2 — Note generation, coverage check | Not started |
+| 2 — Note generation and the coverage check | Done, prompt unvalidated |
 | 3 — Question engine: blueprints, novelty gate, examiner pass | Not started |
 | 4 — FSRS scheduling at concept level, mastery rollup | Not started |
 | 5 — Past papers, timed exams, concept map | Not started |
@@ -159,6 +164,18 @@ be traced back to your material is one the model knew already. And near-
 identical concepts are merged: over-splitting is what makes a coverage badge
 lie, since five restatements of one idea are all "covered" by the sentence that
 says it once.
+
+**Generated notes never touch your writing.** A generation run replaces the
+blocks it wrote before and nothing else: anything you wrote, and anything you
+locked, stays exactly where it is. A restore point is taken first regardless.
+
+**The coverage badge says only what it checked.** It verifies that every
+concept in the section's list is explained somewhere in the notes — by
+comparing against what was actually written, not against the model's claim to
+have covered it. It cannot verify that the concept list covers the lecture, and
+it does not pretend to; the tooltip says so. When something is not covered it is
+named, because "44/47, and here are the three" is worth more than 47/47 obtained
+by letting the loop keep trying.
 
 **No feature code knows a model name.** Everything goes through one call —
 `llm.complete({ task, prompt, images? })` — and the task is mapped to a model in

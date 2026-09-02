@@ -1,7 +1,7 @@
 # Testing Processor
 
-Four layers, cheapest first. Run the top two constantly, the third before you
-commit anything structural, and the fourth when you want to convince yourself
+Five layers, cheapest first. Run the top two constantly, the third before you
+commit anything structural, and the last two when you want to convince yourself
 the thing genuinely works.
 
 | What | Command | Needs | Time |
@@ -10,6 +10,7 @@ the thing genuinely works.
 | Unit + API tests | `npm test` | — | ~15s |
 | Both together | `npm run check` | — | ~20s |
 | Browser journey | `npm run test:e2e` | running server, Playwright | ~30s |
+| Pipeline dry run | `npm run simulate` | — | ~5s |
 | Clicking around | `npm run seed` | running server | — |
 
 Nothing above needs the network or an API key. The test suites use a
@@ -52,6 +53,13 @@ material:
   and cross-references. This one matters more than its size suggests: it runs
   on every save, and a bug there does not crash anything, it quietly rewrites
   your notes into something slightly wrong until you notice weeks later.
+- `generation.test.ts` — note generation and the coverage check. The one that
+  matters most is the lock: `locked` and `user_written` have been enforced since
+  Phase 1, but only against a person editing, never against a generator
+  rewriting a section. That guarantee is now tested against the thing it was
+  built for. The coverage loop has two exits and both are covered — the pass cap,
+  and a pass that stopped making progress, because continuing past that only
+  costs money.
 - `concepts.test.ts` — extraction, dedupe and ownership, all against the stub.
   It says nothing about whether the extraction *prompt* is any good — that
   needs real material and your judgement. What it does prove is what must hold
@@ -119,7 +127,32 @@ E2E_SCREENSHOT_DIR=./shots npm run test:e2e          # capture failures
 Playwright is intentionally not a project dependency — most work does not need
 it, and it is a large install. The script says so clearly if it is missing.
 
-## 4. Clicking around with real data
+## 4. A dry run of the whole pipeline
+
+```bash
+npm run simulate
+```
+
+Takes a made-up neuroscience lecture — nine slides and a transcript with the
+lecturer's own cues in it — through ingest, mapping, concept extraction, note
+generation and the coverage check, printing each stage. No key, no network, and
+a throwaway database it removes afterwards.
+
+**What it proves and what it does not.** The model is a stub and its output was
+written by hand, so this exercises the plumbing: that material flows all the way
+through, that citations survive, that dedupe and the uncitable-concept guard
+fire, that your locked block is untouched by a generation run, and that the
+coverage badge counts what was actually written. It says nothing whatever about
+whether a real model would extract good concepts or write good notes. Three
+flaws in the canned output are deliberate — a duplicated concept, one citing a
+chunk from another section, one concept the notes never cover — so you can watch
+each guard do its job.
+
+It has already earned its keep: the first run showed a supplementary coverage
+pass appending a duplicate of the entire section, because the code trusted the
+prompt's instruction not to repeat itself instead of checking.
+
+## 5. Clicking around with real data
 
 ```bash
 npm run dev      # terminal 1

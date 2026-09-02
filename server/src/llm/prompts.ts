@@ -129,3 +129,144 @@ Extract the examinable concepts from the material below. Cite chunk ids exactly 
 
 ${material}`;
 }
+
+// ---------------------------------------------------------------------------
+// Note generation
+// ---------------------------------------------------------------------------
+
+/**
+ * The house note format, §6.3.
+ *
+ * A template rather than instructions buried in a prompt, because the format
+ * is a preference that will change as you use the notes — and changing it
+ * should be an edit to one readable string, not a hunt through service code.
+ * Override it wholesale with NOTE_FORMAT in .env.
+ */
+export const DEFAULT_NOTE_FORMAT = `Structure each section as:
+- A short opening paragraph saying what this section is about and why it matters.
+- Then the material itself, organised under "## " subheadings that follow the
+  lecture's own structure rather than a generic template.
+- Prose for mechanisms and explanations; bullets only for genuine lists.
+- A "## Summary" at the end: the three or four things that must be remembered.
+
+Write in plain, direct English at the level of a second-year biomedical
+sciences student. Define a term the first time it appears. Prefer the specific
+number, ratio or name over a vague qualifier: "three sodium for two potassium"
+beats "an unequal number".`;
+
+export const NOTE_GENERATION_SYSTEM = `You write revision notes for a university biomedical sciences student, from their own lecture material.
+
+Absolute rules:
+- Everything you write must come from the material provided. Do not add facts from your own knowledge, however standard. If the material does not say it, it does not go in.
+- Cover every concept in the list you are given. Each one must be genuinely explained, not merely mentioned.
+- Never contradict the material. If it is unclear, say what it says.
+- Do not write a preamble, a sign-off, or anything about yourself. The output is the notes.`;
+
+export const NOTE_GENERATION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['blocks'],
+  properties: {
+    blocks: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['type', 'markdown'],
+        properties: {
+          type: {
+            type: 'string',
+            enum: ['heading', 'prose', 'list', 'table', 'callout', 'summary'],
+          },
+          markdown: {
+            type: 'string',
+            description:
+              'The block, as markdown. A heading starts with ## ; a list is one "- " per line.',
+          },
+          conceptIds: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Ids of the concepts this block explains, copied exactly.',
+          },
+        },
+      },
+    },
+  },
+} as const;
+
+export interface ConceptForPrompt {
+  id: string;
+  statement: string;
+  examinable: boolean;
+}
+
+export function noteGenerationPrompt(input: {
+  moduleTitle: string;
+  sectionPath: string;
+  format: string;
+  concepts: ConceptForPrompt[];
+  chunks: ChunkForPrompt[];
+  /** Concepts owned by another section: refer to them, do not re-explain them. */
+  elsewhere: Array<{ statement: string; sectionPath: string }>;
+}): string {
+  const concepts = input.concepts
+    .map(
+      (concept) =>
+        `- [${concept.id}] ${concept.statement}${concept.examinable ? ' (examinable)' : ''}`,
+    )
+    .join('\n');
+
+  const crossrefs = input.elsewhere.length
+    ? `\nThese ideas are taught in another section, which owns them. Refer to that section in one line rather than explaining them again:\n${input.elsewhere
+        .map((entry) => `- ${entry.statement} → ${entry.sectionPath}`)
+        .join('\n')}\n`
+    : '';
+
+  const material = input.chunks
+    .map((chunk) => `<chunk id="${chunk.id}" from="${chunk.location}">\n${chunk.text}\n</chunk>`)
+    .join('\n\n');
+
+  return `Module: ${input.moduleTitle}
+Section: ${input.sectionPath}
+
+${input.format}
+
+Cover every one of these concepts, citing the id of each in the block that explains it:
+${concepts}
+${crossrefs}
+Material:
+
+${material}`;
+}
+
+/**
+ * The supplementary pass. Deliberately narrow: it is given only what is still
+ * missing, so it writes an addition rather than a second version of the whole
+ * section that would then have to be reconciled with the first.
+ */
+export function coverageGapPrompt(input: {
+  sectionPath: string;
+  format: string;
+  missing: ConceptForPrompt[];
+  chunks: ChunkForPrompt[];
+  existing: string;
+}): string {
+  return `Section: ${input.sectionPath}
+
+The notes below already exist. They do not yet explain these concepts:
+${input.missing.map((concept) => `- [${concept.id}] ${concept.statement}`).join('\n')}
+
+Write only the additional blocks needed to cover them, in the same style. Do not
+repeat anything the existing notes already say, and do not rewrite them.
+
+${input.format}
+
+Existing notes:
+${input.existing}
+
+Material:
+
+${input.chunks
+  .map((chunk) => `<chunk id="${chunk.id}" from="${chunk.location}">\n${chunk.text}\n</chunk>`)
+  .join('\n\n')}`;
+}

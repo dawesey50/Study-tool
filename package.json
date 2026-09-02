@@ -21,7 +21,8 @@
     "doctor": "node scripts/doctor.mjs",
     "seed": "node scripts/seed.mjs",
     "check": "npm run typecheck && npm test",
-    "db:generate": "npm run db:generate --workspace server"
+    "db:generate": "npm run db:generate --workspace server",
+    "simulate": "tsx scripts/simulate.ts"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

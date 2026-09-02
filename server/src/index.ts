@@ -11,6 +11,7 @@ import { closeDb, initDb, isVecAvailable } from './db/index.js';
 import { resetInterruptedIngests } from './ingest/jobs.js';
 import { embedderStatus } from './embeddings/index.js';
 import { conceptRoutes } from './routes/concepts.js';
+import { generationRoutes } from './routes/generation.js';
 import { llmRoutes } from './routes/llm.js';
 import { moduleRoutes } from './routes/modules.js';
 import { noteRoutes } from './routes/notes.js';
@@ -98,6 +99,7 @@ export async function buildServer(options: BuildOptions = {}) {
   await app.register(llmRoutes);
   await app.register(snapshotRoutes);
   await app.register(conceptRoutes);
+  await app.register(generationRoutes);
 
   // In production the built frontend is served by the same process, so the
   // whole app is one command and one port.

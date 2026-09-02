@@ -82,6 +82,20 @@ export const config = {
     minCharsToJudge: num('CONCEPT_MIN_CHARS', 2500),
   },
 
+  /**
+   * Note generation. Both thresholds are guesses and the coverage one deserves
+   * particular suspicion, because it decides whether the badge tells the truth:
+   * set it too low and the notes read as fully covered while concepts are only
+   * mentioned in passing.
+   */
+  generation: {
+    coverageThreshold: num('COVERAGE_THRESHOLD', 0.62),
+    figureThreshold: num('FIGURE_MATCH_THRESHOLD', 0.5),
+    maxOutputTokens: num('NOTE_MAX_OUTPUT_TOKENS', 8000),
+    /** Replaces the built-in note format wholesale when set. */
+    noteFormat: str('NOTE_FORMAT', ''),
+  },
+
   ingest: {
     chunkTargetChars: num('CHUNK_TARGET_CHARS', 1400),
     chunkOverlapChars: num('CHUNK_OVERLAP_CHARS', 180),

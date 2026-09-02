@@ -22,6 +22,7 @@ import {
   TrailingParagraph,
   VariantBlockquote,
 } from './editor/extensions';
+import { GenerateNotes } from './GenerateNotes';
 import { CrossrefBlock, FigureBlock } from './editor/nodes';
 import { CrossrefPicker, FigurePicker } from './editor/pickers';
 import { Icon, type IconName } from './ui/Icon';
@@ -260,6 +261,7 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
 
   return (
     <div>
+      <GenerateNotes sectionId={sectionId} />
       <Toolbar editor={editor} status={status} />
 
       <BubbleMenu
