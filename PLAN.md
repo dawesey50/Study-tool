@@ -52,7 +52,7 @@ which is where the spec's two differentiators live — are not started.
 | §4 Section hierarchy, drag-and-drop, stable UUIDs | **Done** | Numbers derived from position; verified that reordering renumbers without breaking links |
 | §4 Hierarchy by hand / grow as you go | **Done** | Paste an outline, or add sections individually |
 | §4 Hierarchy *proposed* by an LLM | **Not started** | Spec calls this "the default flow" |
-| §4 Four tabs per section | **Half** | Notes, Concepts and Sources work; Exam questions and Practice are honest placeholders |
+| §4 Four tabs per section | **Mostly** | Notes, Concepts, Practice and Sources work; Exam questions is still an honest placeholder |
 | §5 Data model | **Done** | All 15 tables exist, including those nothing writes to yet |
 | §6.1 Note generation pipeline | **Done** | Block-by-block against the concept list; prompt unvalidated on real material |
 | §6.2 Coverage check and badge | **Done** | Measured against the note text, capped at three passes, names what is uncovered |
@@ -61,11 +61,11 @@ which is where the spec's two differentiators live — are not started.
 | §6.5 Cross-referencing instead of repeating | **Mostly** | The crossref block renders and resolves to a live section number; ownership is assigned across the module at ~0.9 cosine. Generation writing crossref blocks instead of prose is Step 5 |
 | §6.6 Editing and edit preservation | **Done** | Blocks carry origin and a lock; locked blocks reject edits |
 | §6.6 Section action toolbar | **Not started** | No "explain further", "rewrite", "go deeper" |
-| §7 Question engine | **Not started** | Tables exist; nothing populates them |
-| §8 FSRS revision | **Not started** | `ts-fsrs` not installed |
+| §7 Question engine | **Done, untested on real material** | Blueprint sampling, 11 archetypes, 6 distractor strategies, novelty gate, examiner pass, answer-key balancing. `npm run spike` exists to judge the gate — its offline half already showed the trigram check catches copy-paste and not paraphrase |
+| §8 FSRS revision | **Done** | ts-fsrs at concept level, confidence-driven grades, mastery rolled up the tree with untested concepts counted as zero. Confident-and-wrong kept beside the schedule because FSRS has no grade for it |
 | §9 Exam mode | **Not started** | |
 | §10 Sidebar tree, global search | **Done** | Keyword and semantic search, merged |
-| §10 Dashboard, concept map, command palette | **Not started** | Some shortcuts exist (⌘K, ⌘,, ⌘B) but no palette |
+| §10 Dashboard, concept map, command palette | **Part** | The revision view is a per-module dashboard; no concept map and no command palette |
 | §12 Cost estimate | **Done** | Every call recorded and priced, aggregated per module in Settings against the cap |
 | §13 Things to deliberately not do | **Respected** | No audio, no accounts, no chat-first UI, no topic-string questions, no silent overwrites, no decorative figures |
 
@@ -216,20 +216,34 @@ ownership, write crossref blocks instead of duplicated prose, and add the
 backlinks panel. Worth doing soon after generation, because retrofitting
 de-duplication onto notes already written is harder than generating them right.
 
-### Step 5 — The question engine (5–7 days)
+### Step 5 — The question engine — **built**
 
-The spec's stated differentiator, and the largest single piece: blueprint
-sampling, the archetype and distractor banks, the novelty gate, and the examiner
-pass. §7 is specific enough to implement closely — the value is in following it
-rather than shortcutting to "ask for ten questions".
+Blueprint sampling, the archetype and distractor banks, the novelty gate and
+the examiner pass are all in, along with the bank and practice views. §7 was
+followed closely rather than shortcut to "ask for ten questions".
 
-Realistically this lands during term, not before it.
+What it has not had is a real model on real material, and that is the whole
+question. `npm run spike` exists to answer it: offline it runs hand-written
+stem pairs through the gate, and with a key it generates thirty questions on
+one section, prints the survivors and leaves you to read them.
 
-### Step 6 — Revision, then exams (during term)
+Its offline half has already paid for itself. The word-trigram check does not
+do what the code claimed — it scored a one-word edit at 0.69 but a genuine
+paraphrase at 0.00 and a clause-reordered duplicate at 0.13. Trigrams catch
+copy-paste and nothing subtler, so the whole burden of catching paraphrase
+falls on the embedding, and a run without a working embedder is close to no
+gate at all. Every run now reports how many questions got through on wording
+alone rather than letting that pass silently.
 
-FSRS at concept level (§8), then past papers and timed exams (§9), then the
-dashboard and concept map (§10). Each is useful alone and none blocks the
-others.
+### Step 6 — Revision — **built**; then exams
+
+FSRS at concept level (§8) is done: concepts scheduled rather than questions,
+confidence deciding the grade, mastery rolled up the section tree with untested
+concepts counted as zero, and confident-and-wrong kept as its own list because
+FSRS has no grade that can express it.
+
+Still to come: past papers driving timed exams (§9), and the concept map
+(§10). Each is useful alone and neither blocks the other.
 
 ---
 
@@ -244,7 +258,15 @@ Stated plainly, because it affects how much to trust the steps above:
   slide decks chunk, and whether figures come out of them cleanly, is unknown
   until you put a few through.
 
-Both resolve the same way: ingest two or three real lectures and one real
-textbook chapter, then read the Sources tab and the proposed mappings. Half an
-hour of that before Step 2 is worth more than any amount of further work on
-generated fixtures, because Steps 2–5 all inherit whatever ingestion produces.
+- **Whether the novelty gate works.** The one assumption the question engine
+  rests on. Only half testable offline, and the half that ran found the trigram
+  check weaker than assumed.
+- **Whether the schedule is any good.** FSRS itself is well studied; what is
+  not is the mapping from a confidence button to a grade, or whether asking for
+  confidence every time is something you will actually keep doing.
+
+All of these resolve the same way: ingest two or three real lectures and one
+real textbook chapter, then read the Sources tab and the proposed mappings.
+Half an hour of that is worth more than any amount of further work on generated
+fixtures, because everything downstream inherits whatever ingestion produces —
+and then `npm run spike --module <id>` with a real key, and read the questions.

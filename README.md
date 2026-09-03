@@ -21,9 +21,13 @@ reading its output on your own material and revising it — `npm run simulate`
 shows the pipeline running end to end on a made-up lecture, which proves the
 plumbing but says nothing about the writing.
 
-The question engine, spaced repetition and exam mode are Phases 3–5. The
-database schema already covers all of them, so those phases add behaviour
-rather than reshaping data.
+Exam mode is Phase 5. The database schema already covers it, so that phase
+adds behaviour rather than reshaping data.
+
+The question engine and the scheduler are built but have never seen a real
+lecture. `npm run spike` is there to answer the question the whole engine rests
+on — whether filtering by similarity produces questions that feel genuinely
+different — and it needs a real API key and real material to answer properly.
 
 | Phase | Status |
 |---|---|
@@ -31,8 +35,8 @@ rather than reshaping data.
 | 2 — Model routing, cost accounting, spending limits | Done |
 | 2 — Concept extraction and ownership | Done, prompt unvalidated |
 | 2 — Note generation and the coverage check | Done, prompt unvalidated |
-| 3 — Question engine: blueprints, novelty gate, examiner pass | Not started |
-| 4 — FSRS scheduling at concept level, mastery rollup | Not started |
+| 3 — Question engine: blueprints, novelty gate, examiner pass | Done, untested on real material |
+| 4 — FSRS scheduling at concept level, mastery rollup | Done |
 | 5 — Past papers setting examinability | Done |
 | 5 — Timed exams, concept map | Not started |
 
