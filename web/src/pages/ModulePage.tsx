@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, flattenSections } from '../lib/api';
+import { HierarchyProposal } from '../components/HierarchyProposal';
 import { RestorePoints } from '../components/RestorePoints';
 import { Icon } from '../components/ui/Icon';
 import { Modal } from '../components/ui/Modal';
@@ -23,6 +24,7 @@ export function ModulePage() {
   const confirm = useConfirm();
   const [outline, setOutline] = useState('');
   const [outlineOpen, setOutlineOpen] = useState(false);
+  const [proposeOpen, setProposeOpen] = useState(false);
 
   const { data: module, isLoading } = useQuery({
     queryKey: ['module', moduleId],
@@ -132,10 +134,25 @@ export function ModulePage() {
       <section className="mt-10">
         <div className="flex items-center justify-between gap-4">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">Hierarchy</h2>
-          <button className="btn btn-sm" onClick={() => setOutlineOpen(true)}>
-            <Icon name="edit" size={13} />
-            Paste an outline
-          </button>
+          <div className="flex gap-2">
+            <button
+              className="btn btn-sm"
+              onClick={() => setProposeOpen(true)}
+              disabled={ingested === 0}
+              title={
+                ingested === 0
+                  ? 'Upload and ingest the lecture material first — the structure is read off it'
+                  : 'Propose a hierarchy from this module’s material'
+              }
+            >
+              <Icon name="sparkle" size={13} />
+              Propose from material
+            </button>
+            <button className="btn btn-sm" onClick={() => setOutlineOpen(true)}>
+              <Icon name="edit" size={13} />
+              Paste an outline
+            </button>
+          </div>
         </div>
 
         {sections.length === 0 ? (
@@ -149,9 +166,15 @@ export function ModulePage() {
               lecture. <strong className="font-medium text-ink">Your notes live inside a
               section</strong>, so you need at least one before you can write anything.
             </p>
-            <div className="mt-4 flex items-center justify-center gap-2">
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+              {ingested > 0 && (
+                <button className="btn btn-primary" onClick={() => setProposeOpen(true)}>
+                  <Icon name="sparkle" size={15} />
+                  Propose from material
+                </button>
+              )}
               <button
-                className="btn btn-primary"
+                className={ingested > 0 ? 'btn' : 'btn btn-primary'}
                 onClick={() => addSection.mutate()}
                 disabled={addSection.isPending}
               >
@@ -164,8 +187,13 @@ export function ModulePage() {
               </button>
             </div>
             <p className="mx-auto mt-3 max-w-sm text-xs leading-relaxed text-muted">
-              One section is enough to start. Paste your handbook outline instead if you want the
-              whole tree in one go — you can rename, add and drag sections at any time.
+              {ingested > 0
+                ? 'Proposing reads the titles and opening slides of what you have uploaded and ' +
+                  'suggests a structure — nothing changes until you accept it. Or paste your ' +
+                  'handbook outline, or add one section and grow the tree as you go.'
+                : 'One section is enough to start. Paste your handbook outline instead if you ' +
+                  'want the whole tree in one go — you can rename, add and drag sections at any ' +
+                  'time.'}
             </p>
           </div>
         ) : (
@@ -189,6 +217,12 @@ export function ModulePage() {
       </section>
 
       <RestorePoints moduleId={moduleId!} />
+
+      <HierarchyProposal
+        moduleId={moduleId!}
+        open={proposeOpen}
+        onClose={() => setProposeOpen(false)}
+      />
 
       <Modal
         open={outlineOpen}

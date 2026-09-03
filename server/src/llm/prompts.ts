@@ -452,3 +452,95 @@ The source material it must be answerable from:
 
 ${input.chunks.map((chunk) => `<chunk from="${chunk.location}">\n${chunk.text}\n</chunk>`).join('\n\n')}`;
 }
+
+// ---------------------------------------------------------------------------
+// Hierarchy proposal — §4
+// ---------------------------------------------------------------------------
+
+export const HIERARCHY_SYSTEM = `You are helping a biomedical sciences student set up a module in their study system, by proposing the section hierarchy their notes will hang from.
+
+You are looking at the titles of their lecture material and, where available, the stated learning outcomes. Propose the structure the module actually has — not a structure that would be tidy.
+
+What makes a good hierarchy here:
+- It follows the teaching order, because that is the order the student met the material and the order the exam will assume.
+- Sections are the size of a topic someone would revise in one sitting. A section covering three lectures is too big to hold in your head; one per slide is too small to be worth a page of notes.
+- Two levels is usually right. Use a third only where the material genuinely nests.
+- Titles say what the section is about, not what the lecture was called. "Oxidative phosphorylation" rather than "Lecture 7 (Tuesday)".
+- Where several lectures cover one topic, they become one section rather than three.
+
+Do not invent sections for material that is not there. If the titles only cover six topics, propose six sections.`;
+
+export const HIERARCHY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['sections'],
+  properties: {
+    sections: {
+      type: 'array',
+      description: 'Top-level sections, in teaching order.',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['title'],
+        properties: {
+          title: { type: 'string' },
+          /** Why this section exists, in one line, so the proposal can be judged. */
+          rationale: { type: 'string' },
+          children: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['title'],
+              properties: {
+                title: { type: 'string' },
+                rationale: { type: 'string' },
+                children: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    required: ['title'],
+                    properties: {
+                      title: { type: 'string' },
+                      rationale: { type: 'string' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
+export function hierarchyPrompt(input: {
+  moduleTitle: string;
+  sources: Array<{ title: string; type: string; date: string | null; outline: string[] }>;
+  existing: string[];
+}): string {
+  const sources = input.sources
+    .map((source) => {
+      const heading = `- ${source.title}  (${source.type}${source.date ? `, ${source.date}` : ''})`;
+      const outline = source.outline.length
+        ? `\n${source.outline.map((line) => `    · ${line}`).join('\n')}`
+        : '';
+      return heading + outline;
+    })
+    .join('\n');
+
+  const existing = input.existing.length
+    ? `\nThe module already has these sections. Keep any that still fit, and say so by reusing the exact title:\n${input.existing
+        .map((title) => `- ${title}`)
+        .join('\n')}\n`
+    : '';
+
+  return `Module: ${input.moduleTitle}
+
+Its material, in the order it was taught:
+${sources}
+${existing}
+Propose the section hierarchy for this module.`;
+}

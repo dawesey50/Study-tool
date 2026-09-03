@@ -13,6 +13,7 @@ import { embedderStatus } from './embeddings/index.js';
 import { conceptRoutes } from './routes/concepts.js';
 import { examRoutes } from './routes/exams.js';
 import { generationRoutes } from './routes/generation.js';
+import { hierarchyRoutes } from './routes/hierarchy.js';
 import { llmRoutes } from './routes/llm.js';
 import { moduleRoutes } from './routes/modules.js';
 import { noteRoutes } from './routes/notes.js';
@@ -106,6 +107,7 @@ export async function buildServer(options: BuildOptions = {}) {
   await app.register(questionRoutes);
   await app.register(revisionRoutes);
   await app.register(examRoutes);
+  await app.register(hierarchyRoutes);
 
   // In production the built frontend is served by the same process, so the
   // whole app is one command and one port.

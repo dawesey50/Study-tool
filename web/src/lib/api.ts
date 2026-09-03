@@ -649,6 +649,22 @@ export interface ExamSummary {
   minutes: number;
 }
 
+export interface ProposedSection {
+  title: string;
+  rationale?: string;
+  existing?: boolean;
+  children?: ProposedSection[];
+}
+
+export interface HierarchyProposal {
+  moduleId: string;
+  sections: ProposedSection[];
+  sourcesConsidered: Array<{ title: string; type: string; outlineLines: number }>;
+  /** Sections that exist now and are absent from the proposal — they would go. */
+  wouldRemove: string[];
+  costUsd: number;
+}
+
 export const api = {
   health: () => request<Health>('/api/health'),
 
@@ -865,6 +881,19 @@ export const api = {
     }>(`/api/modules/${moduleId}/past-papers/extract`, {
       method: 'POST',
       body: JSON.stringify(sourceId ? { sourceId } : {}),
+    }),
+
+  proposeHierarchy: (moduleId: string) =>
+    request<HierarchyProposal>(`/api/modules/${moduleId}/hierarchy/propose`, { method: 'POST' }),
+  previewHierarchy: (moduleId: string, sections: ProposedSection[]) =>
+    request<{ atRisk: Array<{ sectionId: string; sectionPath: string; blocks: number }> }>(
+      `/api/modules/${moduleId}/hierarchy/preview`,
+      { method: 'POST', body: JSON.stringify({ sections }) },
+    ),
+  applyHierarchy: (moduleId: string, sections: ProposedSection[]) =>
+    request<SectionNode[]>(`/api/modules/${moduleId}/hierarchy/apply`, {
+      method: 'POST',
+      body: JSON.stringify({ sections }),
     }),
 
   listExams: (moduleId: string) =>
