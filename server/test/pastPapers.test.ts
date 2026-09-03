@@ -118,7 +118,11 @@ test('a concept a past paper asked about is flagged, with the paper as evidence'
 
   const result = markExaminableFromPastPapers({ moduleId });
   assert.equal(result.papers, 1);
-  assert.equal(result.questions, 1);
+  // Passages of paper text, not questions. This was called `questions` and
+  // reported a chunk count, so the interface said "checked against 12
+  // questions" when it had compared twelve 1400-character passages. Real
+  // question extraction is a separate pass — see pastPaperQuestions.ts.
+  assert.equal(result.passages, 1);
   assert.equal(result.flagged, 1);
   assert.equal(result.unmeasured, false);
 

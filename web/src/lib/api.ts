@@ -303,7 +303,8 @@ export interface SectionConcepts {
 export interface ExaminableResult {
   moduleId: string;
   papers: number;
-  questions: number;
+  /** Passages of paper text compared — not questions. */
+  passages: number;
   conceptsConsidered: number;
   flagged: number;
   alreadyFlagged: number;
@@ -467,6 +468,8 @@ export interface Question {
   createdAt: number;
   sectionPaths: string[];
   accuracy: number | null;
+  /** Resolved server-side: a question that depends on a figure must show it. */
+  figure: { url: string; caption: string | null } | null;
 }
 
 export interface QuestionBank {
@@ -502,6 +505,7 @@ export interface PracticeQuestion {
   stem: string;
   bloomLevel: string | null;
   figureId: string | null;
+  figure: { url: string; caption: string | null } | null;
   sectionPaths: string[];
   options: string[];
 }
@@ -777,6 +781,19 @@ export const api = {
       `/api/attempts/${attemptId}/mark`,
       { method: 'POST', body: JSON.stringify({ correct }) },
     ),
+
+  extractPastPapers: (moduleId: string, sourceId?: string) =>
+    request<{
+      papers: number;
+      found: number;
+      stored: number;
+      skippedExisting: number;
+      mapped: number;
+      unmapped: boolean;
+    }>(`/api/modules/${moduleId}/past-papers/extract`, {
+      method: 'POST',
+      body: JSON.stringify(sourceId ? { sourceId } : {}),
+    }),
 
   getRevision: (moduleId: string) =>
     request<RevisionSummary>(`/api/modules/${moduleId}/revision`),

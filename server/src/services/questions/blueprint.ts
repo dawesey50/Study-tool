@@ -383,10 +383,30 @@ export function sampleBlueprint(options: SampleOptions): SampleResult | null {
     .slice(0, Math.min(seedCount, seeds.length))
     .map((seed) => seed.value);
 
-  const figureId =
-    format === 'data_interp' || archetype === 'data_interpretation'
-      ? figureForSections(picked.map((concept) => concept.sectionId), random)
-      : null;
+  const wantsFigure = format === 'data_interp' || archetype === 'data_interpretation';
+  const figureId = wantsFigure
+    ? figureForSections(picked.map((concept) => concept.sectionId), random)
+    : null;
+
+  /**
+   * A data-interpretation question with no figure is unanswerable.
+   *
+   * `figureForSections` returns null whenever the sections in scope have no
+   * figures — a transcript-only module, or a lecture whose slides were text.
+   * Left alone, the shape still says "read the trace" and the generator
+   * obliges, producing a question about a graph nobody can see. Worse than
+   * useless: answering it wrongly feeds a false signal to the scheduler for a
+   * concept that may be perfectly well understood.
+   *
+   * So the shape gives way to what the material can actually support.
+   */
+  const shape: { format: schema.QuestionFormat; archetype: Archetype } =
+    wantsFigure && !figureId
+      ? {
+          format: format === 'data_interp' ? 'saq' : format,
+          archetype: archetype === 'data_interpretation' ? 'experimental_result' : archetype,
+        }
+      : { format, archetype };
 
   const constraint =
     random() < 0.35 ? CONSTRAINTS[Math.floor(random() * CONSTRAINTS.length)]! : null;
@@ -395,8 +415,8 @@ export function sampleBlueprint(options: SampleOptions): SampleResult | null {
     conceptIds: picked.map((concept) => concept.id),
     sectionIds: [...new Set(picked.map((concept) => concept.sectionId))],
     bloom,
-    format,
-    archetype,
+    format: shape.format,
+    archetype: shape.archetype,
     distractors,
     scenario,
     figureId,
@@ -406,7 +426,7 @@ export function sampleBlueprint(options: SampleOptions): SampleResult | null {
   return {
     blueprint,
     rationale:
-      `${archetype.replace(/_/g, ' ')} · ${format} · ${bloom}` +
+      `${shape.archetype.replace(/_/g, ' ')} · ${shape.format} · ${bloom}` +
       (isBridge ? ' · bridges two sections' : '') +
       (scenario.length ? ` · ${scenario.join(', ')}` : '') +
       (constraint ? ` · ${constraint}` : ''),

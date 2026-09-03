@@ -86,7 +86,7 @@ export function ConceptList({ moduleId, sectionId }: { moduleId: string; section
           result.flagged > 0
             ? `Flagged ${result.flagged} concept${result.flagged === 1 ? '' : 's'} as examinable`
             : 'Nothing new to flag',
-          `Checked ${result.conceptsConsidered} concepts against ${result.questions} questions ` +
+          `Checked ${result.conceptsConsidered} concepts against ${result.passages} passages ` +
             `from ${result.papers} paper${result.papers === 1 ? '' : 's'}.`,
         );
       }

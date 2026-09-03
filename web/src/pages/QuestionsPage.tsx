@@ -359,6 +359,20 @@ function QuestionRow({
 
       {expanded && (
         <div className="border-t border-line bg-panel p-4 text-sm">
+          {question.figure && (
+            <figure className="mb-3">
+              <img
+                src={question.figure.url}
+                alt={question.figure.caption ?? 'Figure this question refers to'}
+                className="max-h-80 w-full rounded-lg border border-line object-contain"
+              />
+              {question.figure.caption && (
+                <figcaption className="mt-1.5 text-xs text-muted">
+                  {question.figure.caption}
+                </figcaption>
+              )}
+            </figure>
+          )}
           {question.optionsJson && question.optionsJson.length > 0 && (
             <ul className="space-y-1.5">
               {question.optionsJson.map((option, index) => (

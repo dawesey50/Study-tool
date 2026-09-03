@@ -194,6 +194,27 @@ export function PracticePage() {
 
       <div className="card mt-4 p-5">
         <p className="text-[15px] leading-relaxed">{question.stem}</p>
+
+        {/*
+          The figure the question depends on. Without it a data-interpretation
+          question asks what a trace shows with no trace, which is not merely
+          unhelpful — it is unanswerable, and getting it wrong would feed a
+          false signal into the schedule.
+        */}
+        {question.figure && (
+          <figure className="mt-4">
+            <img
+              src={question.figure.url}
+              alt={question.figure.caption ?? 'Figure this question refers to'}
+              className="max-h-96 w-full rounded-lg border border-line object-contain"
+            />
+            {question.figure.caption && (
+              <figcaption className="mt-1.5 text-xs text-muted">
+                {question.figure.caption}
+              </figcaption>
+            )}
+          </figure>
+        )}
         {question.bloomLevel && (
           <span className="mt-3 inline-block rounded bg-line px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-muted">
             {question.bloomLevel}

@@ -563,6 +563,101 @@ test('a run reports questions admitted without an embedding', async () => {
   assert.ok(result.admittedWithoutEmbeddings <= result.accepted);
 });
 
+test('a blueprint never requires a figure the module cannot show', async () => {
+  // This module has no figures at all — a transcript-only unit, or slides that
+  // were pure text. Sampling can still land on the data-interpretation shape.
+  const { moduleId } = await makeModule('No figures');
+
+  const blueprints = Array.from({ length: 120 }, () =>
+    sampleBlueprint({ moduleId, random: seeded(4) })!.blueprint,
+  );
+
+  for (const blueprint of blueprints) {
+    // "Read the trace" with no trace is not a hard question, it is an
+    // impossible one — and answering it wrongly would feed a false signal into
+    // the schedule for a concept that may be perfectly well understood. So the
+    // shape gives way to what the material can support.
+    if (blueprint.figureId === null) {
+      assert.notEqual(blueprint.format, 'data_interp', blueprint.stem ?? '');
+      assert.notEqual(blueprint.archetype, 'data_interpretation');
+    }
+  }
+});
+
+test('a question that needs a figure is served with it', async () => {
+  const { moduleId, sectionIds } = await makeModule('With a figure');
+  const db = getDb();
+
+  const source = db
+    .select()
+    .from(schema.sources)
+    .where(eq(schema.sources.moduleId, moduleId))
+    .get()!;
+
+  const figureId = newId();
+  db.insert(schema.figures)
+    .values({
+      id: figureId,
+      sourceId: source.id,
+      path: 'media/figures/src/fig-1.png',
+      pageNo: 3,
+      captionExtracted: 'Figure 3. Oxygen electrode trace after oligomycin addition.',
+    })
+    .run();
+
+  const questionId = newId();
+  db.insert(schema.questions)
+    .values({
+      id: questionId,
+      moduleId,
+      format: 'data_interp',
+      stem: 'The trace shown is from an oxygen electrode. What happens at the arrow, and why?',
+      conceptIds: [],
+      sectionIds: [sectionIds[0]!],
+      figureId,
+      workedAnswer: 'Respiration slows because ATP synthase is blocked.',
+      source: 'generated',
+    })
+    .run();
+
+  const practice = json<{ questions: Array<{ figure: { url: string; caption: string } | null }> }>(
+    await app.inject({ method: 'GET', url: `/api/modules/${moduleId}/practice?count=5` }),
+  );
+  const served = practice.questions.find((question) => question.figure !== null);
+
+  // The id alone is no use to the page: it cannot turn one into an image.
+  assert.ok(served, 'the figure was not served with the question that depends on it');
+  assert.match(served.figure!.url, /^\/media\//);
+  assert.match(served.figure!.caption, /oxygen electrode/i);
+
+  const bank = json<{ questions: Array<{ id: string; figure: { url: string } | null }> }>(
+    await app.inject({ method: 'GET', url: `/api/modules/${moduleId}/questions` }),
+  );
+  assert.ok(bank.questions.find((question) => question.id === questionId)?.figure);
+});
+
+test('a question whose figure has been deleted degrades rather than breaking', async () => {
+  const { moduleId, sectionIds } = await makeModule('Missing figure');
+  getDb()
+    .insert(schema.questions)
+    .values({
+      id: newId(),
+      moduleId,
+      format: 'saq',
+      stem: 'A question pointing at a figure that is no longer there.',
+      conceptIds: [],
+      sectionIds: [sectionIds[0]!],
+      figureId: 'a-figure-that-was-deleted',
+      source: 'generated',
+    })
+    .run();
+
+  const response = await app.inject({ method: 'GET', url: `/api/modules/${moduleId}/practice` });
+  assert.equal(response.statusCode, 200);
+  const practice = json<{ questions: Array<{ figure: unknown }> }>(response);
+  assert.equal(practice.questions[0]!.figure, null);
+});
+
 // ---------------------------------------------------------------------------
 // The routes: the bank and practice
 // ---------------------------------------------------------------------------

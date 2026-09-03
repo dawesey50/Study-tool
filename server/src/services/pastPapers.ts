@@ -28,7 +28,15 @@ const MAX_EVIDENCE = 4;
 export interface ExaminableResult {
   moduleId: string;
   papers: number;
-  questions: number;
+  /**
+   * Passages of paper text compared, not questions.
+   *
+   * This was called `questions` and reported a chunk count, so the interface
+   * said "checked against 12 questions from 2 papers" when it had compared
+   * twelve 1400-character passages. Extracting real questions is a separate
+   * pass — see pastPaperQuestions.ts — and this number is not it.
+   */
+  passages: number;
   conceptsConsidered: number;
   flagged: number;
   alreadyFlagged: number;
@@ -73,7 +81,7 @@ export function markExaminableFromPastPapers(options: ExaminableOptions): Examin
   const base: ExaminableResult = {
     moduleId: options.moduleId,
     papers: papers.length,
-    questions: 0,
+    passages: 0,
     conceptsConsidered: concepts.length,
     flagged: 0,
     alreadyFlagged: concepts.filter((concept) => concept.examinableFlag).length,
@@ -103,7 +111,7 @@ export function markExaminableFromPastPapers(options: ExaminableOptions): Examin
     )
     .all();
 
-  base.questions = chunks.length;
+  base.passages = chunks.length;
 
   const paperVectors = chunks
     .map((chunk) => ({

@@ -103,6 +103,13 @@ export const config = {
    */
   pastPapers: {
     matchThreshold: num('PAST_PAPER_MATCH_THRESHOLD', 0.55),
+    /**
+     * Shortest run of text after a question number that counts as a question.
+     * Below this it is almost always a heading, a mark total or a stray line
+     * number — but set it too high and short questions ("Define apoptosis.")
+     * are silently dropped, which is the more expensive mistake.
+     */
+    minQuestionChars: num('PAST_PAPER_MIN_QUESTION_CHARS', 25),
   },
 
   /**

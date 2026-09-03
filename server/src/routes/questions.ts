@@ -12,6 +12,10 @@ import {
 } from '../services/questions/jobs.js';
 import { keyDistribution, longestRun } from '../services/questions/balance.js';
 import { dueConceptIds, recordReview } from '../services/schedule.js';
+import {
+  extractAllPastPapers,
+  extractPastPaperQuestions,
+} from '../services/pastPaperQuestions.js';
 
 /**
  * The question bank and practice.
@@ -83,6 +87,56 @@ export async function questionRoutes(app: FastifyInstance): Promise<void> {
     return { cancelling: true };
   });
 
+  /**
+   * Pull the real questions out of this module's past papers.
+   *
+   * Needs no model and costs nothing: exam papers number their questions, so
+   * the split is done in code. Safe to re-run — a paper extracted before its
+   * concepts existed maps to nothing, and running it again once they do fills
+   * that in without duplicating anything.
+   */
+  app.post('/api/modules/:id/past-papers/extract', async (request, reply) => {
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+    const body = z.object({ sourceId: z.string().optional() }).parse(request.body ?? {});
+    if (!moduleOr404(id)) return reply.code(404).send({ error: 'Module not found' });
+
+    try {
+      const results = body.sourceId
+        ? [await extractPastPaperQuestions({ sourceId: body.sourceId })]
+        : await extractAllPastPapers(id);
+
+      if (results.length === 0) {
+        return reply.code(400).send({
+          error:
+            'No ingested past papers in this module. Upload one on the Sources page, filed ' +
+            'as "Past paper", and let it finish ingesting.',
+        });
+      }
+
+      const total = results.reduce(
+        (sum, result) => ({
+          found: sum.found + result.found,
+          stored: sum.stored + result.stored,
+          skippedExisting: sum.skippedExisting + result.skippedExisting,
+          mapped: sum.mapped + result.mapped,
+        }),
+        { found: 0, stored: 0, skippedExisting: 0, mapped: 0 },
+      );
+
+      return {
+        papers: results.length,
+        ...total,
+        // Saying so plainly beats a silent zero: the questions are stored and
+        // guard the novelty gate either way, but without concepts they cannot
+        // be filed under a section.
+        unmapped: results.some((result) => result.unmapped),
+        results,
+      };
+    } catch (error) {
+      return reply.code(400).send({ error: (error as Error).message });
+    }
+  });
+
   // --- the bank ------------------------------------------------------------
 
   /**
@@ -127,6 +181,7 @@ export async function questionRoutes(app: FastifyInstance): Promise<void> {
       questions: filtered.map((row) => ({
         ...row,
         embedding: undefined,
+        figure: figureFor(row.figureId),
         sectionPaths: (row.sectionIds ?? []).map((sectionId) => paths.get(sectionId) ?? ''),
         accuracy: row.timesServed > 0 ? row.timesCorrect / row.timesServed : null,
       })),
@@ -198,6 +253,7 @@ export async function questionRoutes(app: FastifyInstance): Promise<void> {
         stem: row.stem,
         bloomLevel: row.bloomLevel,
         figureId: row.figureId,
+        figure: figureFor(row.figureId),
         sectionPaths: (row.sectionIds ?? []).map((sectionId) => paths.get(sectionId) ?? ''),
         // Option text only. Which one is correct, the worked answer and the
         // mark scheme are all withheld until an attempt is recorded.
@@ -348,6 +404,25 @@ export async function questionRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // --- helpers -------------------------------------------------------------
+
+  /**
+   * The figure a question depends on, as something the page can display.
+   *
+   * A blueprint may require a figure — the data-interpretation archetype is
+   * built on one — and the stem is written to depend on reading it. Serving
+   * the question without it makes the question unanswerable, and answering it
+   * wrongly then feeds a false signal into the scheduler for a concept that
+   * may be perfectly well understood.
+   */
+  function figureFor(figureId: string | null): { url: string; caption: string | null } | null {
+    if (!figureId) return null;
+    const figure = db.select().from(schema.figures).where(eq(schema.figures.id, figureId)).get();
+    if (!figure) return null;
+    return {
+      url: `/media/${figure.path.replace(/^media\//, '')}`,
+      caption: figure.captionExtracted ?? figure.captionAi ?? null,
+    };
+  }
 
   function sectionPaths(moduleId: string): Map<string, string> {
     return new Map(
