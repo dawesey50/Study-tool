@@ -270,3 +270,117 @@ real textbook chapter, then read the Sources tab and the proposed mappings.
 Half an hour of that is worth more than any amount of further work on generated
 fixtures, because everything downstream inherits whatever ingestion produces —
 and then `npm run spike --module <id>` with a real key, and read the questions.
+
+---
+
+# Plan v3 — after the question engine and the scheduler
+
+Written 3 September 2026, once §7 and §8 were built and their tests passed.
+Same method as the audit above: every claim checked against the code, not
+recalled. The difference is that this time the code being audited is code I
+wrote a few hours earlier, which is exactly when a plan is most likely to
+flatter itself.
+
+Two of the four findings are correctness bugs rather than missing features —
+things the system claims to do, has tests for, and cannot actually do on real
+data. Those come first.
+
+## A. Broken, not missing
+
+### A1 — The "never reproduce a past paper" gate can never fire
+
+The novelty gate's most important check is the one that stops a generated
+question reproducing a real exam question, on the grounds that such a question
+teaches the paper rather than the concept while looking like a success. It is
+implemented, it has a passing test, and it is dead.
+
+`checkNovelty` looks for rows in `questions` with `source = 'past_paper'`.
+Nothing in the codebase ever writes one. Uploading a past paper stores it as a
+source and chunks it; `markExaminableFromPastPapers` matches those *chunks*
+against concepts to flag what is examinable, which is a different job. No
+question row is ever created, so the gate compares every generated question
+against an empty set of past papers and passes it. The test that covers this
+passes because it constructs the past-paper row by hand.
+
+So the guarantee is honest in the code and false in practice, which is the
+worst combination — worse than not having the check, because the bank looks
+guarded when it is not. `QUESTION_PAST_PAPER_LIMIT` is a setting that currently
+controls nothing.
+
+**Fix:** extract questions from past-paper sources into `questions` with
+`source = 'past_paper'`, embedded and mapped to the concepts they test. That
+single change closes the gate, fills the Exam questions tab, and is the
+foundation §9 needs anyway — real papers are what a mock exam should be built
+from.
+
+### A2 — A question that depends on a figure never shows the figure
+
+`sampleBlueprint` picks a `figureId` for `data_interp` formats and the
+`data_interpretation` archetype, generation is prompted to write a stem that
+depends on reading it, and the id is stored on the question. Neither the
+practice page nor the bank renders it.
+
+The result is a question asking what a trace shows, with no trace. It is not
+merely unhelpful — it is unanswerable, and answering it wrongly feeds a wrong
+signal into the scheduler, which then schedules revision for a concept you may
+understand perfectly well.
+
+**Fix:** serve the figure URL with the question and render it in both views.
+Until then a blueprint should not be allowed to require a figure it cannot
+show.
+
+## B. Missing, and worth having in this order
+
+### B1 — Exam mode (§9)
+
+The `exams` table exists and nothing writes to it. With A1 done the ingredients
+are all present: real past-paper questions, generated questions, blueprints,
+and a marking path. A timed paper assembled to a blueprint, submitted as a
+whole rather than question by question, and marked afterwards.
+
+Worth doing after A1 rather than before, because an exam built only from
+generated questions is a worse mock than one that includes the real ones.
+
+### B2 — A hierarchy proposed from the material (§4)
+
+The spec calls this the default flow and it has never been built. Today a new
+module starts with an empty tree and a text box, so the first twenty minutes
+with a new unit is typing out a handbook contents page. The routing table has
+had a `hierarchy_proposal` task pointing at a model since the LLM layer landed;
+nothing calls it.
+
+This is the largest gap between what the spec describes and what the tool does,
+and it is felt on day one of every new module rather than in week eight.
+
+### B3 — Section actions (§6.6)
+
+"Explain further", "rewrite this", "go deeper" — a `section_rewrite` task is
+configured and routed, and nothing calls it either. The value is that notes
+stop being take-it-or-leave-it: a paragraph that did not land can be asked to
+try again without regenerating the section and losing everything else.
+
+### B4 — The concept map (§10)
+
+`concept_links` is populated by ownership assignment and read only to warn that
+another section says the same thing. Drawn as a graph it is the one view that
+shows a module as a shape rather than a list. Genuinely useful, and the least
+urgent thing here.
+
+## C. Smaller things, worth doing while nearby
+
+- **Past-paper questions are invisible in the bank.** The API takes a `source`
+  filter; the UI never sets it. Trivial once A1 gives it something to show.
+- **The bank returns every question at once.** Fine at fifty, not at five
+  hundred.
+- **No keyboard path through practice.** Answering thirty questions a day with
+  a mouse is a reason to stop doing it. Number keys to choose, 1–5 for
+  confidence, Enter to submit and advance.
+- **A bad question can only be deleted, not replaced.** Regenerating one
+  against the same blueprint would be more useful than losing it.
+
+## What this plan does not claim
+
+None of the above changes the fact that no real lecture and no real model have
+been through this system. A1 in particular is a fix whose value can only be
+seen once you upload an actual past paper — which is also the moment it will
+first be possible to tell whether question extraction works at all.
