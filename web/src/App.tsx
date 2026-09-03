@@ -91,7 +91,7 @@ export function App() {
           {!collapsed && moduleId && (
             <>
               <div className="mt-1 border-t border-line" />
-              <nav className="grid grid-cols-3 gap-1 px-2 py-2">
+              <nav className="grid grid-cols-2 gap-1 px-2 py-2">
                 <Link
                   to={`/modules/${moduleId}/revision`}
                   className="btn btn-sm justify-center"
@@ -115,6 +115,14 @@ export function App() {
                 >
                   <Icon name="layers" size={14} className="mr-1" />
                   Bank
+                </Link>
+                <Link
+                  to={`/modules/${moduleId}/exams`}
+                  className="btn btn-sm justify-center"
+                  title="Sit a whole paper against the clock"
+                >
+                  <Icon name="file" size={14} className="mr-1" />
+                  Mocks
                 </Link>
               </nav>
               <div className="border-t border-line" />

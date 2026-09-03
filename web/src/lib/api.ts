@@ -577,6 +577,78 @@ export interface DueConcept {
   confidentlyWrong: number;
 }
 
+// ---------------------------------------------------------------------------
+// Exams — §9
+// ---------------------------------------------------------------------------
+
+export interface ExamQuestionView {
+  id: string;
+  format: QuestionFormat;
+  stem: string;
+  /** Option text only — nothing about the answer until the paper is submitted. */
+  options: string[];
+  marks: number | null;
+  source: 'generated' | 'past_paper';
+  sectionPaths: string[];
+  figure: { url: string; caption: string | null } | null;
+}
+
+export interface ExamView {
+  id: string;
+  moduleId: string;
+  title: string;
+  blueprint: {
+    sectionIds: string[];
+    questionCount: number;
+    minutes: number;
+    pastPaperShare: number;
+  };
+  startedAt: number | null;
+  submittedAt: number | null;
+  score: number | null;
+  questions: ExamQuestionView[];
+}
+
+export interface MarkedQuestion {
+  questionId: string;
+  stem: string;
+  format: QuestionFormat;
+  source: 'generated' | 'past_paper';
+  answered: boolean;
+  correct: boolean | null;
+  correctIndex: number | null;
+  options: McqOption[] | null;
+  yourAnswer: string | null;
+  workedAnswer: string | null;
+  markScheme: string | null;
+  attemptId: string;
+  confidentlyWrong: boolean;
+}
+
+export interface ExamResult {
+  examId: string;
+  title: string;
+  submittedAt: number;
+  secondsTaken: number | null;
+  score: number | null;
+  marked: number;
+  correct: number;
+  unmarked: number;
+  unanswered: number;
+  confidentlyWrong: number;
+  questions: MarkedQuestion[];
+}
+
+export interface ExamSummary {
+  id: string;
+  title: string;
+  questionCount: number;
+  startedAt: number | null;
+  submittedAt: number | null;
+  score: number | null;
+  minutes: number;
+}
+
 export const api = {
   health: () => request<Health>('/api/health'),
 
@@ -794,6 +866,40 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(sourceId ? { sourceId } : {}),
     }),
+
+  listExams: (moduleId: string) =>
+    request<{ exams: ExamSummary[] }>(`/api/modules/${moduleId}/exams`),
+  createExam: (
+    moduleId: string,
+    body: {
+      title?: string;
+      sectionIds?: string[];
+      questionCount?: number;
+      minutes?: number;
+      pastPaperShare?: number;
+    },
+  ) =>
+    request<ExamView>(`/api/modules/${moduleId}/exams`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  getExam: (examId: string) => request<ExamView>(`/api/exams/${examId}`),
+  startExam: (examId: string) =>
+    request<ExamView>(`/api/exams/${examId}/start`, { method: 'POST' }),
+  submitExam: (
+    examId: string,
+    answers: Array<{
+      questionId: string;
+      optionIndex?: number;
+      text?: string;
+      confidence?: number;
+    }>,
+  ) =>
+    request<ExamResult>(`/api/exams/${examId}/submit`, {
+      method: 'POST',
+      body: JSON.stringify({ answers }),
+    }),
+  deleteExam: (examId: string) => request<void>(`/api/exams/${examId}`, { method: 'DELETE' }),
 
   getRevision: (moduleId: string) =>
     request<RevisionSummary>(`/api/modules/${moduleId}/revision`),
