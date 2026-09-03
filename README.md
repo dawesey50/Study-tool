@@ -40,6 +40,14 @@ tests prove the plumbing, not the writing.
 | 5 — Past papers setting examinability, real questions extracted | Done |
 | 5 — Timed exams, concept map | Done |
 
+## Trying it on your own material
+
+Everything automated here runs offline against a stub model, so it proves the
+plumbing and nothing about the writing. [WALKTHROUGH.md](WALKTHROUGH.md) is the
+two-hour sequence that answers the other question — nine stages, each with a
+stop-and-look, ending in `npm run report`, which writes a single file
+describing everything that happened.
+
 ## Using it
 
 **Double-click `Processor.bat`** (Windows) or **`Processor.command`** (Mac).

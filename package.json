@@ -25,7 +25,8 @@
     "check": "npm run typecheck && npm test",
     "db:generate": "npm run db:generate --workspace server",
     "simulate": "tsx scripts/simulate.ts",
-    "spike": "tsx scripts/spike-novelty.ts"
+    "spike": "tsx scripts/spike-novelty.ts",
+    "report": "tsx scripts/report.ts"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

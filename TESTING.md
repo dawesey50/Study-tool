@@ -12,6 +12,12 @@ the thing genuinely works.
 | Browser journey | `npm run test:e2e` | running server, Playwright | ~30s |
 | Pipeline dry run | `npm run simulate` | — | ~5s |
 | Clicking around | `npm run seed` | running server | — |
+| A report on what happened | `npm run report` | — | ~2s |
+
+**Testing it on your own material is a different exercise** and has its own
+document: [WALKTHROUGH.md](WALKTHROUGH.md). Everything in the table above runs
+against a stub model and an offline embedder, so it proves the plumbing and
+says nothing about whether the writing is any good.
 
 Nothing above needs the network or an API key. The test suites use a
 deterministic offline embedding provider and a throwaway database in your
@@ -240,6 +246,26 @@ real API.
    extremes and every number behind it is a guess — a slide deck is terse and
    dense in claims, a transcript verbose and sparse. `CONCEPT_CHARS_EACH` and
    the band either side of it are in `.env`.
+
+## 6. A report on what actually happened
+
+```bash
+npm run report              # counts, warnings, short excerpts
+npm run report -- --full    # longer excerpts, for judging the writing
+npm run report -- --quiet   # counts and warnings only, no material
+```
+
+Writes `data/report-<date>.md`: the environment, every threshold in force, what
+each stage produced per module, samples of the concepts, notes and questions,
+the answer-key distribution, spend, and a list of what looks wrong.
+
+It exists because the interesting findings live in a database on one machine
+and cannot be seen from anywhere else. Sharing it is how someone who cannot see
+your screen can tell what happened.
+
+It never includes API keys. It does include excerpts of your own material, so
+read it before sending it — or use `--quiet`, which drops the material and
+keeps the shape.
 
 ## Common problems
 
