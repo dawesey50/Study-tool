@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { getDb, schema } from '../db/index.js';
 import { dueConcepts, misconceptions, moduleMastery, revisionSummary } from '../services/schedule.js';
+import { conceptMap } from '../services/conceptMap.js';
 
 /**
  * What is due, and how well the module is known.
@@ -38,6 +39,18 @@ export async function revisionRoutes(app: FastifyInstance): Promise<void> {
     const { id } = z.object({ id: z.string() }).parse(request.params);
     if (!moduleOr404(id)) return reply.code(404).send({ error: 'Module not found' });
     return { sections: moduleMastery(id) };
+  });
+
+  /**
+   * The concept map — §10.
+   *
+   * Recomputed on every view rather than cached: it calls no model and costs
+   * nothing, and a cached map goes stale the moment a concept is edited.
+   */
+  app.get('/api/modules/:id/map', async (request, reply) => {
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+    if (!moduleOr404(id)) return reply.code(404).send({ error: 'Module not found' });
+    return conceptMap(id);
   });
 
   /**

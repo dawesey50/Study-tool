@@ -676,6 +676,33 @@ export interface BlockActionResult {
   costUsd: number;
 }
 
+export interface MapNode {
+  id: string;
+  sectionId: string;
+  sectionPath: string;
+  sectionIndex: number;
+  statement: string;
+  examinable: boolean;
+  mastery: number | null;
+  degree: number;
+}
+
+export interface MapEdge {
+  from: string;
+  to: string;
+  type: string;
+  note: string | null;
+  crossSection: boolean;
+}
+
+export interface ConceptMap {
+  moduleId: string;
+  nodes: MapNode[];
+  edges: MapEdge[];
+  sections: Array<{ id: string; path: string; concepts: number; index: number }>;
+  isolatedSections: string[];
+}
+
 export const api = {
   health: () => request<Health>('/api/health'),
 
@@ -946,6 +973,8 @@ export const api = {
       body: JSON.stringify({ answers }),
     }),
   deleteExam: (examId: string) => request<void>(`/api/exams/${examId}`, { method: 'DELETE' }),
+
+  getConceptMap: (moduleId: string) => request<ConceptMap>(`/api/modules/${moduleId}/map`),
 
   getRevision: (moduleId: string) =>
     request<RevisionSummary>(`/api/modules/${moduleId}/revision`),

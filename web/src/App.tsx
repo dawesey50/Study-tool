@@ -124,6 +124,14 @@ export function App() {
                   <Icon name="file" size={14} className="mr-1" />
                   Mocks
                 </Link>
+                <Link
+                  to={`/modules/${moduleId}/map`}
+                  className="btn btn-sm col-span-2 justify-center"
+                  title="Where this module connects to itself"
+                >
+                  <Icon name="grip" size={14} className="mr-1" />
+                  Concept map
+                </Link>
               </nav>
               <div className="border-t border-line" />
               <div className="rail-heading">

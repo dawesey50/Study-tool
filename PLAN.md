@@ -51,8 +51,8 @@ which is where the spec's two differentiators live — are not started.
 | §3 LLM routing (`llm.complete`) | **Done** | One interface, task-to-model mapping in config, provider fallback, cost ledger and three spending limits |
 | §4 Section hierarchy, drag-and-drop, stable UUIDs | **Done** | Numbers derived from position; verified that reordering renumbers without breaking links |
 | §4 Hierarchy by hand / grow as you go | **Done** | Paste an outline, or add sections individually |
-| §4 Hierarchy *proposed* by an LLM | **Not started** | Spec calls this "the default flow" |
-| §4 Four tabs per section | **Mostly** | Notes, Concepts, Practice and Sources work; Exam questions is still an honest placeholder |
+| §4 Hierarchy *proposed* by an LLM | **Done** | Reads titles and opening slides, proposes as data; applying is a separate act that names what it would delete first |
+| §4 Four tabs per section | **Done** | Notes, Concepts, Exam questions, Practice and Sources are all real. No placeholders left in the app |
 | §5 Data model | **Done** | All 15 tables exist, including those nothing writes to yet |
 | §6.1 Note generation pipeline | **Done** | Block-by-block against the concept list; prompt unvalidated on real material |
 | §6.2 Coverage check and badge | **Done** | Measured against the note text, capped at three passes, names what is uncovered |
@@ -60,12 +60,12 @@ which is where the spec's two differentiators live — are not started.
 | §6.4 Figure placement by similarity | **Done** | Placed beside the block their caption matches |
 | §6.5 Cross-referencing instead of repeating | **Mostly** | The crossref block renders and resolves to a live section number; ownership is assigned across the module at ~0.9 cosine. Generation writing crossref blocks instead of prose is Step 5 |
 | §6.6 Editing and edit preservation | **Done** | Blocks carry origin and a lock; locked blocks reject edits |
-| §6.6 Section action toolbar | **Not started** | No "explain further", "rewrite", "go deeper" |
+| §6.6 Section action toolbar | **Done** | Per block, answered only from that section's sources, shown beside the original and written only when accepted |
 | §7 Question engine | **Done, untested on real material** | Blueprint sampling, 11 archetypes, 6 distractor strategies, novelty gate, examiner pass, answer-key balancing. `npm run spike` exists to judge the gate — its offline half already showed the trigram check catches copy-paste and not paraphrase |
 | §8 FSRS revision | **Done** | ts-fsrs at concept level, confidence-driven grades, mastery rolled up the tree with untested concepts counted as zero. Confident-and-wrong kept beside the schedule because FSRS has no grade for it |
-| §9 Exam mode | **Not started** | |
+| §9 Exam mode | **Done** | Timed papers mixing real past-paper questions with generated ones; marked on submission, over what can be marked |
 | §10 Sidebar tree, global search | **Done** | Keyword and semantic search, merged |
-| §10 Dashboard, concept map, command palette | **Part** | The revision view is a per-module dashboard; no concept map and no command palette |
+| §10 Dashboard, concept map, command palette | **Mostly** | Revision view and concept map both built. No command palette (⌘K is search) |
 | §12 Cost estimate | **Done** | Every call recorded and priced, aggregated per module in Settings against the cap |
 | §13 Things to deliberately not do | **Respected** | No audio, no accounts, no chat-first UI, no topic-string questions, no silent overwrites, no decorative figures |
 
@@ -384,3 +384,91 @@ None of the above changes the fact that no real lecture and no real model have
 been through this system. A1 in particular is a fix whose value can only be
 seen once you upload an actual past paper — which is also the moment it will
 first be possible to tell whether question extraction works at all.
+
+
+---
+
+# Plan v3 — outcome
+
+Every item is done. What follows is what each one turned out to involve,
+because in three cases the fix was not the one the plan described.
+
+## A1 — past papers become questions — **done**
+
+The gate now fires. Papers are split in code on their question numbering,
+which is a typographic convention rather than a guess about language, so it
+runs offline, costs nothing and is testable — and that matters beyond
+elegance, because it means the guarantee holds for someone with no API key.
+A test now shows the gate rejecting a near-copy of a real question, which is
+the first time that code path has ever executed.
+
+It also turned up a smaller lie beside it: the examinability pass reported a
+chunk count as `questions`, so the interface said "checked against 12
+questions" when it had compared twelve 1400-character passages.
+
+## A2 — figures — **done**
+
+Fixed from both sides. The figure is resolved server-side and drawn in
+practice, the bank and exams; and sampling no longer produces a
+data-interpretation shape when the sections in scope have no figures at all,
+which could previously ask a transcript-only module to read a graph that does
+not exist.
+
+## B1 — exam mode — **done**
+
+The properties that make it a mock rather than practice with a clock are each
+tested: the paper is fixed when drawn, nothing is marked until submission, and
+real questions are preferred. What it refuses to claim matters as much — the
+score is over what could be marked and says how much it left out, because most
+of a real paper is prose and past papers ship no mark scheme.
+
+## B2 — hierarchy proposal — **done**, and it caught a real bug
+
+`replaceTree` matches sections by id, and the first version passed titles
+alone. So a section the proposal said it was *keeping* was deleted and rebuilt
+with a new id, taking its notes with it — the promise printed on the screen
+was false in the most expensive possible way. Existing sections are now
+matched back to their ids by title.
+
+## B3 — section actions — **done**
+
+Two restraints matter more than the feature: it does not write over your
+block, and it cannot reach outside the section's own sources. "Go deeper" is
+precisely the request most likely to be answered with something plausible and
+absent from the material, and a note is the worst place for that.
+
+## B4 — concept map — **done**
+
+An edge means "these two were measured as saying close to the same thing",
+which is narrower than "these are related" and is the only claim the data
+supports. The layout is deterministic rather than force-directed, because a
+map that settles somewhere different on each load cannot be used for the thing
+a map is for — recognising your own module, and noticing when it changes.
+
+## C — smaller things — **done**
+
+Practice is fully keyboard-driven; the bank filters by source and marks real
+questions as real. Paging the bank was left alone: a bank large enough to need
+it does not exist yet, and the right page size is a guess until one does.
+
+---
+
+## What is still unknown, after all of this
+
+Unchanged by any of the above, and worth repeating because the amount of code
+now sitting on top of it has roughly doubled:
+
+- **No real lecture has been through the pipeline.** Every fixture is
+  generated. Chunking, mapping and figure extraction on actual Bath slides are
+  unmeasured.
+- **No real model has written a question or a note.** Every prompt in this
+  system is unvalidated. The tests prove plumbing, not quality.
+- **The novelty gate is half tested.** The trigram half was measured and found
+  weak; the embedding half has never run, because the environment this was
+  built in cannot reach the model.
+- **Every threshold is a guess.** Twelve of them, all exposed in `.env`, none
+  tuned against anything real.
+
+The order to resolve them in has not changed since plan v2: two or three real
+lectures and one past paper through ingestion, read the mappings, then
+`npm run spike -- --module <id>` with a key, and read the questions.

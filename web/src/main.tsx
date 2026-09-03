@@ -6,6 +6,7 @@ import { App } from './App';
 import { initTheme } from './lib/theme';
 import { ConfirmProvider } from './components/ui/Confirm';
 import { ToastProvider } from './components/ui/Toast';
+import { ConceptMapPage } from './pages/ConceptMapPage';
 import { ExamPage, ExamsPage } from './pages/ExamsPage';
 import { ModulePage } from './pages/ModulePage';
 import { ModulesPage } from './pages/ModulesPage';
@@ -42,6 +43,7 @@ const router = createBrowserRouter([
       { path: 'modules/:moduleId/questions', element: <QuestionsPage /> },
       { path: 'modules/:moduleId/practice', element: <PracticePage /> },
       { path: 'modules/:moduleId/revision', element: <RevisionPage /> },
+      { path: 'modules/:moduleId/map', element: <ConceptMapPage /> },
       { path: 'modules/:moduleId/exams', element: <ExamsPage /> },
       { path: 'modules/:moduleId/exams/:examId', element: <ExamPage /> },
       { path: 'modules/:moduleId/sections/:sectionId', element: <SectionPage /> },
