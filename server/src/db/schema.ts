@@ -342,7 +342,22 @@ export const attempts = sqliteTable(
   (t) => [index('attempts_question_idx').on(t.questionId)],
 );
 
-/** FSRS state, scheduled per concept rather than per question. */
+/**
+ * FSRS state, scheduled per concept rather than per question.
+ *
+ * Per concept is the whole point. Scheduling questions would revise the
+ * question rather than the thing it tests: you would see the same wording
+ * again on the day it came due, and answering it right would prove only that
+ * you remembered the answer to that question. A concept can be approached from
+ * eleven archetypes, so what comes due is the idea and the question is drawn
+ * fresh.
+ *
+ * The columns mirror a ts-fsrs card exactly, because a card that does not
+ * round-trip is a schedule that quietly resets. `state` and `scheduledDays`
+ * look redundant next to a due date and they are not: FSRS uses them to tell
+ * learning from review from relearning, and dropping them would make every
+ * reload look like a new card.
+ */
 export const conceptSchedule = sqliteTable('concept_schedule', {
   conceptId: text('concept_id')
     .primaryKey()
@@ -353,6 +368,22 @@ export const conceptSchedule = sqliteTable('concept_schedule', {
   reps: integer('reps').notNull().default(0),
   lapses: integer('lapses').notNull().default(0),
   lastReview: integer('last_review'),
+  /** ts-fsrs State: 0 new, 1 learning, 2 review, 3 relearning. */
+  state: integer('state').notNull().default(0),
+  scheduledDays: real('scheduled_days').notNull().default(0),
+  elapsedDays: real('elapsed_days').notNull().default(0),
+  learningSteps: integer('learning_steps').notNull().default(0),
+  /**
+   * Times this concept was answered wrongly while the answer felt certain.
+   *
+   * Kept separately rather than folded into the schedule because FSRS has no
+   * grade for it — every wrong answer is Again, whether you guessed or would
+   * have bet on it. Those are not the same problem, and the difference is the
+   * most useful thing the system learns about you, so it is recorded where it
+   * can be surfaced instead of being flattened into a due date.
+   */
+  confidentlyWrong: integer('confidently_wrong').notNull().default(0),
+  lastGrade: integer('last_grade'),
 });
 
 export const exams = sqliteTable('exams', {

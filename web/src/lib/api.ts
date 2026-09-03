@@ -519,6 +519,60 @@ export interface AttemptResult {
   conceptIds: string[];
 }
 
+// ---------------------------------------------------------------------------
+// Revision — §8
+// ---------------------------------------------------------------------------
+
+export interface SectionMastery {
+  sectionId: string;
+  sectionPath: string;
+  concepts: number;
+  reviewed: number;
+  mastery: number;
+  due: number;
+  confidentlyWrong: number;
+  /** This section plus everything beneath it. */
+  subtree: {
+    concepts: number;
+    reviewed: number;
+    mastery: number;
+    due: number;
+    confidentlyWrong: number;
+  };
+}
+
+export interface Misconception {
+  conceptId: string;
+  sectionId: string;
+  sectionPath: string;
+  statement: string;
+  confidentlyWrong: number;
+  lapses: number;
+}
+
+export interface RevisionSummary {
+  moduleId: string;
+  sections: SectionMastery[];
+  due: number;
+  dueNew: number;
+  dueOverdue: number;
+  concepts: number;
+  reviewed: number;
+  mastery: number;
+  misconceptions: Misconception[];
+}
+
+export interface DueConcept {
+  conceptId: string;
+  sectionId: string;
+  statement: string;
+  dueDate: number | null;
+  isNew: boolean;
+  stability: number | null;
+  lapses: number;
+  confidentlyWrong: number;
+}
+
 export const api = {
   health: () => request<Health>('/api/health'),
 
@@ -723,6 +777,11 @@ export const api = {
       `/api/attempts/${attemptId}/mark`,
       { method: 'POST', body: JSON.stringify({ correct }) },
     ),
+
+  getRevision: (moduleId: string) =>
+    request<RevisionSummary>(`/api/modules/${moduleId}/revision`),
+  getDue: (moduleId: string, limit = 100) =>
+    request<{ concepts: DueConcept[] }>(`/api/modules/${moduleId}/due?limit=${limit}`),
 
   llmStatus: () => request<LlmStatus>('/api/llm/status'),
   llmUsage: () => request<LlmUsage>('/api/llm/usage'),

@@ -133,6 +133,25 @@ export const config = {
     examinerFloor: num('QUESTION_EXAMINER_FLOOR', 4),
   },
 
+  /**
+   * Spaced repetition — §8. Both numbers are guesses like the rest.
+   */
+  schedule: {
+    /**
+     * The probability of recall FSRS aims for at review time. 0.9 is its own
+     * default and means roughly one in ten reviews is a failure — which is
+     * meant to feel uncomfortable, because a schedule you always pass is one
+     * that is reviewing you too often.
+     */
+    requestRetention: num('FSRS_REQUEST_RETENTION', 0.9),
+    /**
+     * Where the mastery curve bends: a concept whose memory is estimated to
+     * last this many days reads as half mastered. Purely a display choice, and
+     * it changes no schedule.
+     */
+    masteryHalfLifeDays: num('MASTERY_HALF_LIFE_DAYS', 21),
+  },
+
   ingest: {
     chunkTargetChars: num('CHUNK_TARGET_CHARS', 1400),
     chunkOverlapChars: num('CHUNK_OVERLAP_CHARS', 180),

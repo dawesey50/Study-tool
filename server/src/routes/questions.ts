@@ -11,6 +11,7 @@ import {
   startGeneration,
 } from '../services/questions/jobs.js';
 import { keyDistribution, longestRun } from '../services/questions/balance.js';
+import { dueConceptIds, recordReview } from '../services/schedule.js';
 
 /**
  * The question bank and practice.
@@ -150,8 +151,11 @@ export async function questionRoutes(app: FastifyInstance): Promise<void> {
   /**
    * A set to work through, without the answers.
    *
-   * Ordering puts the least-served questions first so a bank of fifty is not
-   * experienced as the same five, and ties break on the weakest accuracy.
+   * Ordering is what makes this spaced repetition rather than a shuffle: a
+   * question testing a concept that has come due outranks everything else,
+   * because the concept is the thing being scheduled and the question is only
+   * how it gets asked. Within that, least-served first so a bank of fifty is
+   * not experienced as the same five, and ties break on the weakest accuracy.
    */
   app.get('/api/modules/:id/practice', async (request, reply) => {
     const { id } = z.object({ id: z.string() }).parse(request.params);
@@ -164,6 +168,10 @@ export async function questionRoutes(app: FastifyInstance): Promise<void> {
 
     if (!moduleOr404(id)) return reply.code(404).send({ error: 'Module not found' });
 
+    const due = dueConceptIds(id);
+    const touchesDue = (question: { conceptIds: string[] | null }) =>
+      (question.conceptIds ?? []).some((conceptId) => due.has(conceptId));
+
     const rows = db
       .select()
       .from(schema.questions)
@@ -171,6 +179,9 @@ export async function questionRoutes(app: FastifyInstance): Promise<void> {
       .all()
       .filter((row) => !query.sectionId || (row.sectionIds ?? []).includes(query.sectionId))
       .sort((a, b) => {
+        const dueA = touchesDue(a);
+        const dueB = touchesDue(b);
+        if (dueA !== dueB) return dueA ? -1 : 1;
         if (a.timesServed !== b.timesServed) return a.timesServed - b.timesServed;
         const accuracyA = a.timesServed ? a.timesCorrect / a.timesServed : 1;
         const accuracyB = b.timesServed ? b.timesCorrect / b.timesServed : 1;
@@ -248,6 +259,19 @@ export async function questionRoutes(app: FastifyInstance): Promise<void> {
       .where(eq(schema.questions.id, id))
       .run();
 
+    // Scheduling happens here rather than in the client, and only for answers
+    // that were actually marked: a written answer whose correctness is unknown
+    // carries no evidence, and feeding it in as a pass or a fail would put
+    // invented data into the schedule.
+    const scheduled =
+      correct === null
+        ? []
+        : recordReview({
+            conceptIds: question.conceptIds ?? [],
+            correct,
+            confidence: body.confidence ?? null,
+          });
+
     return {
       attemptId,
       correct,
@@ -264,6 +288,12 @@ export async function questionRoutes(app: FastifyInstance): Promise<void> {
        */
       confidentlyWrong: correct === false && (body.confidence ?? 0) >= 4,
       conceptIds: question.conceptIds ?? [],
+      /** When each concept this tested comes round again. */
+      scheduled: scheduled.map((outcome) => ({
+        conceptId: outcome.conceptId,
+        intervalDays: outcome.intervalDays,
+        lapsed: outcome.lapsed,
+      })),
     };
   });
 
@@ -295,7 +325,26 @@ export async function questionRoutes(app: FastifyInstance): Promise<void> {
         .run();
     }
 
-    return { attemptId: id, correct: body.correct, conceptIds: question?.conceptIds ?? [] };
+    // The schedule was deliberately not touched when the attempt was recorded,
+    // because nothing was known then. This is the moment the evidence exists.
+    const scheduled = question
+      ? recordReview({
+          conceptIds: question.conceptIds ?? [],
+          correct: body.correct,
+          confidence: attempt.confidenceRating,
+        })
+      : [];
+
+    return {
+      attemptId: id,
+      correct: body.correct,
+      conceptIds: question?.conceptIds ?? [],
+      scheduled: scheduled.map((outcome) => ({
+        conceptId: outcome.conceptId,
+        intervalDays: outcome.intervalDays,
+        lapsed: outcome.lapsed,
+      })),
+    };
   });
 
   // --- helpers -------------------------------------------------------------

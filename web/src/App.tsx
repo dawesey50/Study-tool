@@ -91,22 +91,30 @@ export function App() {
           {!collapsed && moduleId && (
             <>
               <div className="mt-1 border-t border-line" />
-              <nav className="flex gap-1 px-2 py-2">
+              <nav className="grid grid-cols-3 gap-1 px-2 py-2">
+                <Link
+                  to={`/modules/${moduleId}/revision`}
+                  className="btn btn-sm justify-center"
+                  title="What is due, and how well this module is known"
+                >
+                  <Icon name="refresh" size={14} className="mr-1" />
+                  Revise
+                </Link>
+                <Link
+                  to={`/modules/${moduleId}/practice`}
+                  className="btn btn-sm justify-center"
+                  title="Work through questions from this module"
+                >
+                  <Icon name="question" size={14} className="mr-1" />
+                  Practise
+                </Link>
                 <Link
                   to={`/modules/${moduleId}/questions`}
-                  className="btn btn-sm flex-1 justify-center"
+                  className="btn btn-sm justify-center"
                   title="The question bank for this module"
                 >
                   <Icon name="layers" size={14} className="mr-1" />
                   Bank
-                </Link>
-                <Link
-                  to={`/modules/${moduleId}/practice`}
-                  className="btn btn-sm flex-1 justify-center"
-                  title="Work through questions from this module"
-                >
-                  <Icon name="question" size={14} className="mr-1" />
-                  Practice
                 </Link>
               </nav>
               <div className="border-t border-line" />

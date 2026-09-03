@@ -16,6 +16,7 @@ import { llmRoutes } from './routes/llm.js';
 import { moduleRoutes } from './routes/modules.js';
 import { noteRoutes } from './routes/notes.js';
 import { questionRoutes } from './routes/questions.js';
+import { revisionRoutes } from './routes/revision.js';
 import { searchRoutes } from './routes/search.js';
 import { snapshotRoutes } from './routes/snapshots.js';
 import { sourceRoutes } from './routes/sources.js';
@@ -102,6 +103,7 @@ export async function buildServer(options: BuildOptions = {}) {
   await app.register(conceptRoutes);
   await app.register(generationRoutes);
   await app.register(questionRoutes);
+  await app.register(revisionRoutes);
 
   // In production the built frontend is served by the same process, so the
   // whole app is one command and one port.

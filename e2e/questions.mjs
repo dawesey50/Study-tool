@@ -96,6 +96,7 @@ const sectionIds = tree.map((node) => node.id);
 
 const QUESTIONS = [
   {
+    concept: 'Oligomycin blocks the Fo channel, so the proton motive force rises until the chain stalls.',
     stem: 'Isolated mitochondria respiring on succinate are given oligomycin. Predict the change in oxygen uptake and justify it.',
     options: [
       { text: 'It falls, because the chain cannot pump against a rising gradient', correct: true },
@@ -105,6 +106,7 @@ const QUESTIONS = [
     ],
   },
   {
+    concept: 'Competitive inhibition raises apparent Km and leaves Vmax unchanged.',
     stem: 'Two Lineweaver-Burk lines intersect on the y-axis. What does that reveal about where the inhibitor binds?',
     options: [
       { text: 'It binds the free enzyme at the active site', correct: true },
@@ -114,6 +116,7 @@ const QUESTIONS = [
     ],
   },
   {
+    concept: 'Erythrocytes have no mitochondria, so they cannot oxidise ketone bodies.',
     stem: 'During prolonged starvation, hepatocytes export ketone bodies. Why can erythrocytes not use them?',
     options: [
       { text: 'They have no mitochondria', correct: true },
@@ -126,6 +129,25 @@ const QUESTIONS = [
 
 const db = new Database(DB_PATH);
 const now = Math.floor(Date.now() / 1000);
+
+// Concepts first: the schedule is built on concepts, and a question with none
+// attached schedules nothing — which would make the revision view honestly
+// empty and this test meaningless.
+const insertConcept = db.prepare(
+  `INSERT INTO concepts (id, section_id, statement, type, examinable_flag, created_at)
+   VALUES (?, ?, ?, 'mechanism', 1, ?)`,
+);
+const conceptIds = QUESTIONS.map((question, index) => {
+  const id = `e2e-c-${stamp}-${index}`;
+  insertConcept.run(id, sectionIds[index % sectionIds.length], question.concept, now);
+  return id;
+});
+
+// One extra that no question tests, so the view has something never-seen to
+// count. A mastery figure that quietly leaves those out is the failure this
+// whole page exists to avoid.
+insertConcept.run(`e2e-c-${stamp}-spare`, sectionIds[0], 'A concept no question covers.', now);
+
 const insert = db.prepare(
   `INSERT INTO questions
      (id, module_id, blueprint_json, concept_ids, section_ids, format, stem, options_json,
@@ -141,7 +163,7 @@ QUESTIONS.forEach((question, index) => {
     id,
     module.id,
     JSON.stringify({ archetype: 'perturbation', scenario: ['hepatocytes'], constraint: null }),
-    JSON.stringify([]),
+    JSON.stringify([conceptIds[index]]),
     JSON.stringify([sectionIds[index % sectionIds.length]]),
     question.stem,
     JSON.stringify(question.options),
@@ -244,6 +266,29 @@ try {
   const bank = await call('GET', `/api/modules/${module.id}/questions`);
   const served = bank.questions.filter((question) => question.timesServed > 0);
   check('the attempt was counted against the question', served.length === 1);
+
+  // --- revision ------------------------------------------------------------
+  console.log('\nRevision');
+  await page.goto(`${BASE}/modules/${module.id}/revision`, { waitUntil: 'networkidle' });
+  const revision = await page.textContent('body');
+  check('the revision view renders', revision.includes('Revision'));
+  check('mastery is reported across every concept', revision.includes('across every concept'));
+  check('untested concepts are counted, not hidden', revision.includes('never seen'));
+
+  // Four concepts exist and one question was answered, so exactly one has been
+  // seen and the other three are still due. Checked against the API rather
+  // than by string-matching the page, because a number that happens to appear
+  // in the markup proves nothing.
+  const summary = await call('GET', `/api/modules/${module.id}/revision`);
+  check('every concept is counted', summary.concepts === 4, `got ${summary.concepts}`);
+  check('answering scheduled exactly one concept', summary.reviewed === 1, `got ${summary.reviewed}`);
+  check('the other three are still due', summary.due === 3, `got ${summary.due}`);
+  check(
+    'mastery is diluted by what has never been tested',
+    summary.mastery > 0 && summary.mastery < 0.3,
+    `mastery ${summary.mastery}`,
+  );
+  await shoot('questions-revision');
 
   console.log('\nConsole errors during the run:', consoleErrors.length);
   for (const error of consoleErrors.slice(0, 5)) console.log(`  ${error}`);
