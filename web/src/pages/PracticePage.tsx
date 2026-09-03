@@ -94,6 +94,57 @@ export function PracticePage() {
     onError: (error: Error) => toast.error('Could not save that mark', error.message),
   });
 
+  /**
+   * Answering thirty questions a day with a mouse is a reason to stop doing
+   * it, so the whole loop is reachable from the keyboard: a number or letter
+   * picks an option, 1–5 sets confidence, Enter submits and then advances.
+   *
+   * Deliberately inert while a text box has focus — a written answer contains
+   * digits, and having "3" jump the confidence rating mid-sentence would make
+   * the feature actively hostile.
+   */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing =
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.isContentEditable;
+      if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (!question) return;
+
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        if (result) next();
+        else if (canSubmit && !submit.isPending) submit.mutate();
+        return;
+      }
+      if (result) return;
+
+      const isMcqNow = question.options.length > 0;
+
+      // Letters pick an option; digits set confidence. They cannot collide,
+      // which is why the two use different keys rather than sharing 1-5.
+      const letter = event.key.toLowerCase();
+      if (isMcqNow && letter >= 'a' && letter <= 'z') {
+        const index = letter.charCodeAt(0) - 97;
+        if (index < question.options.length) {
+          event.preventDefault();
+          setChosen(index);
+        }
+        return;
+      }
+
+      if (event.key >= '1' && event.key <= '5') {
+        event.preventDefault();
+        setConfidence(Number(event.key));
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  });
+
   const next = () => {
     setChosen(null);
     setWritten('');
@@ -243,7 +294,10 @@ export function PracticePage() {
                     disabled={Boolean(result)}
                     onClick={() => setChosen(optionIndex)}
                   >
-                    <span className="mr-2 font-mono text-xs text-muted">
+                    <span
+                      className="mr-2 font-mono text-xs text-muted"
+                      title={`Press ${String.fromCharCode(97 + optionIndex)}`}
+                    >
                       {String.fromCharCode(65 + optionIndex)}
                     </span>
                     {option}
@@ -279,6 +333,9 @@ export function PracticePage() {
             Asked now rather than after, because afterwards it is a memory of how you felt.
             Being sure and wrong is the single most useful thing this can learn about you.
           </p>
+          <p className="mt-1 text-[11px] text-faint">
+            Keys: a–d choose · 1–5 how sure · Enter answers, then moves on
+          </p>
           <div className="mt-3 flex gap-1.5">
             {CONFIDENCE.map((level) => (
               <button
@@ -289,7 +346,7 @@ export function PracticePage() {
                     : 'border-line hover:border-muted'
                 }`}
                 onClick={() => setConfidence(level.value)}
-                title={level.hint}
+                title={`${level.hint}  (press ${level.value})`}
               >
                 {level.label}
               </button>

@@ -665,6 +665,17 @@ export interface HierarchyProposal {
   costUsd: number;
 }
 
+export interface BlockActionResult {
+  blockId: string;
+  action: string;
+  original: string;
+  proposed: string;
+  note: string | null;
+  /** The sources did not support what was asked, and it says so. */
+  limitedBySources: boolean;
+  costUsd: number;
+}
+
 export const api = {
   health: () => request<Health>('/api/health'),
 
@@ -881,6 +892,12 @@ export const api = {
     }>(`/api/modules/${moduleId}/past-papers/extract`, {
       method: 'POST',
       body: JSON.stringify(sourceId ? { sourceId } : {}),
+    }),
+
+  runBlockAction: (blockId: string, action: string, instruction?: string) =>
+    request<BlockActionResult>(`/api/notes/${blockId}/action`, {
+      method: 'POST',
+      body: JSON.stringify({ action, ...(instruction ? { instruction } : {}) }),
     }),
 
   proposeHierarchy: (moduleId: string) =>

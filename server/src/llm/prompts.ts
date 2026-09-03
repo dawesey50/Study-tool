@@ -544,3 +544,80 @@ ${sources}
 ${existing}
 Propose the section hierarchy for this module.`;
 }
+
+// ---------------------------------------------------------------------------
+// Block actions — §6.6
+// ---------------------------------------------------------------------------
+
+export type BlockAction = 'explain_further' | 'go_deeper' | 'simplify' | 'add_example' | 'rewrite';
+
+/** What each action asks for, in the words the model is given. */
+export const BLOCK_ACTIONS: Record<BlockAction, string> = {
+  explain_further:
+    'Explain this more fully. The reader did not follow it — fill in the step that is missing, do not simply restate it at greater length.',
+  go_deeper:
+    'Go a level deeper into the mechanism. Assume the current explanation is understood and take it further, towards what a harder exam question would ask.',
+  simplify:
+    'Say the same thing more plainly. Shorter sentences, fewer clauses, no loss of precision — this is not a summary and nothing may be dropped.',
+  add_example:
+    'Add a concrete example — a tissue, a clinical presentation, a number, an experiment. Keep the existing explanation and give it something to stand on.',
+  rewrite: 'Rewrite this so it reads better, saying exactly the same thing.',
+};
+
+export const BLOCK_ACTION_SYSTEM = `You are revising one block of a biomedical sciences student's notes, at their request.
+
+Hard rules:
+- Return the block, rewritten. Not a commentary, not a preamble, not "here is the revised version".
+- Markdown, matching the formatting conventions already in the block.
+- Every claim must be supported by the source material you are given. If the action asks for something the sources do not support, do as much as they do support and no more — inventing a mechanism that is not in the material is the one unforgivable failure here, because it will be revised from and examined on.
+- Keep any citation markers that are already present.
+- Stay on this block. The surrounding notes are shown for context so you do not repeat or contradict them, not for you to rewrite.`;
+
+export const BLOCK_ACTION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['markdown'],
+  properties: {
+    markdown: { type: 'string', description: 'The rewritten block.' },
+    /** What changed, in one line, so a bad rewrite is diagnosable. */
+    note: { type: 'string' },
+    /**
+     * Set when the sources could not support what was asked. Better an honest
+     * refusal than a confident invention.
+     */
+    limitedBySources: { type: 'boolean' },
+  },
+} as const;
+
+export function blockActionPrompt(input: {
+  action: BlockAction;
+  instruction: string;
+  sectionPath: string;
+  markdown: string;
+  surrounding: string[];
+  chunks: ChunkForPrompt[];
+  concepts: string[];
+}): string {
+  const surrounding = input.surrounding.length
+    ? `\nThe blocks around it, for context only — do not repeat or contradict them:\n${input.surrounding
+        .map((text) => `> ${text.replace(/\n/g, '\n> ')}`)
+        .join('\n\n')}\n`
+    : '';
+
+  const concepts = input.concepts.length
+    ? `\nThe concepts this section covers:\n${input.concepts.map((c) => `- ${c}`).join('\n')}\n`
+    : '';
+
+  return `Section: ${input.sectionPath}
+
+What to do: ${input.instruction}
+
+The block to revise:
+---
+${input.markdown}
+---
+${surrounding}${concepts}
+Source material — the only thing you may draw on:
+
+${input.chunks.map((chunk) => `<chunk id="${chunk.id}" from="${chunk.location}">\n${chunk.text}\n</chunk>`).join('\n\n')}`;
+}

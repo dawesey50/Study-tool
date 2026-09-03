@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { runBlockAction } from '../services/blockActions.js';
 import { getDb, schema } from '../db/index.js';
 import {
   createBlock,
@@ -56,6 +57,43 @@ export async function noteRoutes(app: FastifyInstance): Promise<void> {
       return publicBlock(await createBlock({ sectionId: id, ...body }));
     } catch (error) {
       return reply.code(409).send({ error: (error as Error).message });
+    }
+  });
+
+  /**
+   * Act on one block — §6.6's "explain further", "go deeper", "simplify".
+   *
+   * Returns a proposal with the original beside it and writes nothing. The
+   * whole reason you pressed this is that one paragraph did not land; having
+   * it silently replaced by something you have not read is not an improvement,
+   * and accepting is a separate PATCH through the ordinary edit path.
+   */
+  app.post('/api/notes/:id/action', async (request, reply) => {
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+    const body = z
+      .object({
+        action: z.enum([
+          'explain_further',
+          'go_deeper',
+          'simplify',
+          'add_example',
+          'rewrite',
+        ]),
+        instruction: z.string().max(500).optional(),
+      })
+      .parse(request.body ?? {});
+
+    try {
+      return await runBlockAction({
+        blockId: id,
+        action: body.action,
+        ...(body.instruction ? { instruction: body.instruction } : {}),
+      });
+    } catch (error) {
+      const name = (error as Error).name;
+      const capped =
+        name === 'RunCeilingError' || name === 'MonthlyCapError' || name === 'IterationLimitError';
+      return reply.code(capped ? 429 : 400).send({ error: (error as Error).message });
     }
   });
 

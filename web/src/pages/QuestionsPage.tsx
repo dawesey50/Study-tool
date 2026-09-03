@@ -29,6 +29,7 @@ export function QuestionsPage() {
 
   const [count, setCount] = useState(10);
   const [sectionId, setSectionId] = useState('');
+  const [source, setSource] = useState<'' | 'generated' | 'past_paper'>('');
   const [watching, setWatching] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [showRejections, setShowRejections] = useState(false);
@@ -40,8 +41,12 @@ export function QuestionsPage() {
   });
 
   const { data: bank, isLoading } = useQuery({
-    queryKey: ['questions', moduleId, sectionId],
-    queryFn: () => api.listQuestions(moduleId!, sectionId ? { sectionId } : {}),
+    queryKey: ['questions', moduleId, sectionId, source],
+    queryFn: () =>
+      api.listQuestions(moduleId!, {
+        ...(sectionId ? { sectionId } : {}),
+        ...(source ? { source } : {}),
+      }),
     enabled: Boolean(moduleId),
   });
 
@@ -229,6 +234,31 @@ export function QuestionsPage() {
         )}
       </div>
 
+      {/* --- filters ---------------------------------------------------- */}
+      <div className="mt-4 flex flex-wrap items-center gap-1.5">
+        {(
+          [
+            { id: '', label: 'Everything' },
+            { id: 'generated', label: 'Generated' },
+            { id: 'past_paper', label: 'From real papers' },
+          ] as const
+        ).map((option) => (
+          <button
+            key={option.id}
+            className={`btn btn-sm ${source === option.id ? 'bg-accent-soft text-accent' : ''}`}
+            onClick={() => setSource(option.id)}
+          >
+            {option.label}
+          </button>
+        ))}
+        {source === 'past_paper' && (
+          <span className="text-xs text-muted">
+            Pulled from the papers unaltered. They carry no answers — a paper prints the question,
+            not the mark scheme.
+          </span>
+        )}
+      </div>
+
       {/* --- the set-level view ---------------------------------------- */}
       {keys && keys.counted > 1 && (
         <div className="card mt-4 p-4">
@@ -330,6 +360,11 @@ function QuestionRow({
             <span className="rounded bg-line px-1.5 py-0.5 uppercase tracking-wide">
               {question.format}
             </span>
+            {question.source === 'past_paper' && (
+              <span className="rounded bg-accent-soft px-1.5 py-0.5 text-accent">
+                real exam question
+              </span>
+            )}
             {blueprint.archetype && <span>{blueprint.archetype.replace(/_/g, ' ')}</span>}
             {question.bloomLevel && <span>· {question.bloomLevel}</span>}
             {question.sectionPaths.length > 0 && (

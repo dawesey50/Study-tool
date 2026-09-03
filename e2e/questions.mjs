@@ -238,12 +238,15 @@ try {
     'confidence must be required, or the signal is worthless',
   );
 
-  await page.getByRole('button', { name: 'Certain' }).click();
-  await page.waitForTimeout(120);
-  check('Answer is enabled once both are given', !(await answerButton.isDisabled()));
+  // Keyboard: 5 sets confidence to Certain without touching the mouse.
+  // Answering thirty a day with a mouse is a reason to stop doing it.
+  await page.keyboard.press('5');
+  await page.waitForTimeout(150);
+  check('a number key sets confidence', !(await answerButton.isDisabled()));
   await shoot('questions-practice');
 
-  await answerButton.click();
+  // Enter answers, and then advances — the whole loop without a mouse.
+  await page.keyboard.press('Enter');
   await page.waitForSelector('text=/Correct|Not right/', { timeout: 5000 });
 
   const afterAnswering = await page.textContent('body');
@@ -257,10 +260,18 @@ try {
   );
   await shoot('questions-answered');
 
-  await page.getByRole('button', { name: /Next question|Finish/ }).click();
+  await page.keyboard.press('Enter');
   await page.waitForTimeout(300);
   const second = await page.textContent('body');
-  check('moving on shows the next question', second.includes('Question 2 of'));
+  check('Enter moves on to the next question', second.includes('Question 2 of'));
+
+  // A letter picks an option, so the second question is answerable entirely
+  // from the keyboard too.
+  await page.keyboard.press('b');
+  await page.keyboard.press('3');
+  await page.waitForTimeout(150);
+  const armed = page.getByRole('button', { name: 'Answer' });
+  check('a letter key chooses an option', !(await armed.isDisabled()));
 
   // --- the attempt was recorded -------------------------------------------
   const bank = await call('GET', `/api/modules/${module.id}/questions`);

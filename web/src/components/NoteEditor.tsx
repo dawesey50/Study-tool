@@ -22,6 +22,7 @@ import {
   TrailingParagraph,
   VariantBlockquote,
 } from './editor/extensions';
+import { BlockActions } from './BlockActions';
 import { GenerateNotes } from './GenerateNotes';
 import { DiagramBlock } from './editor/diagram';
 import { MathInline } from './editor/math';
@@ -144,6 +145,50 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
     loadedSection.current = sectionId;
     setStatus('idle');
   }, [editor, blocks, sectionId]);
+
+  /**
+   * Swap one block's content for a revision, in the document rather than on
+   * the server.
+   *
+   * Going through the editor is what makes this an edit like any other: the
+   * ordinary autosave then writes it, which marks the block `user_edited`, and
+   * generation leaves it alone from then on exactly as it would if you had
+   * typed the change yourself. Writing straight to the API instead would save
+   * a round trip and leave the document on screen showing the old text.
+   */
+  const replaceActiveBlock = useCallback(
+    (blockId: string, markdown: string) => {
+      if (!editor) return;
+      const stored = (blocks ?? []).find((block) => block.id === blockId);
+      if (!stored) return;
+
+      let target: { pos: number; size: number } | null = null;
+      editor.state.doc.forEach((node, offset) => {
+        if (target) return;
+        if ((node.attrs as { blockId?: string } | undefined)?.blockId === blockId) {
+          target = { pos: offset, size: node.nodeSize };
+        }
+      });
+      if (!target) return;
+      const { pos, size } = target as { pos: number; size: number };
+
+      const replacement = blocksToDoc([
+        {
+          id: blockId,
+          type: stored.type as BlockType,
+          markdown,
+          figureId: stored.figureId,
+        },
+      ]) as unknown as { content?: unknown[] };
+
+      editor
+        .chain()
+        .focus()
+        .insertContentAt({ from: pos, to: pos + size }, (replacement.content ?? []) as never)
+        .run();
+    },
+    [editor, blocks],
+  );
 
   const save = useCallback(async () => {
     if (!editor) return;
@@ -347,6 +392,20 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
           {activeBlock?.locked ? 'Unlock' : 'Lock'} this block
         </button>
       </div>
+
+      {/*
+        §6.6. Attached to whichever block the cursor is in, so it is about the
+        paragraph you are looking at rather than the section as a whole — the
+        thing that makes a note fixable without regenerating around it.
+      */}
+      {activeBlock && (
+        <div className="mt-3 rounded-lg border border-line bg-panel p-3">
+          <BlockActions
+            block={activeBlock}
+            onAccept={(markdown) => replaceActiveBlock(activeBlock.id, markdown)}
+          />
+        </div>
+      )}
     </div>
   );
 }
