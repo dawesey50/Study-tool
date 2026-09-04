@@ -9,8 +9,10 @@ A checklist. Tick as you go.
 Your lectures can be **PowerPoint (.pptx)** — that works, including speaker
 notes. Also accepted: `.pdf`, `.docx`, `.txt`, `.md`, `.vtt`, `.srt`.
 
-> If your lectures are the old `.ppt` format, open one in PowerPoint and
-> *Save As → .pptx*. The old binary format cannot be read by anything.
+> **If your files are named `.ppt`** — upload them anyway. Many files named
+> `.ppt` are really the modern format underneath, and those are read normally.
+> If one genuinely is the old binary format, the app says so and tells you how
+> to convert it (File → Info → Convert does a file in two clicks).
 
 **The rule:** if a stage fails, **stop there**. Everything after it inherits
 the problem, and carrying on just shows you the same fault six more times.
@@ -283,7 +285,7 @@ plumbing is tested.
 |---|---|
 | Sidebar says `hash` | `EMBEDDINGS_PROVIDER=local` missing from `.env` |
 | "Embeddings unavailable" | Model download blocked — check the network |
-| Upload rejected | `.ppt` not `.pptx`; save-as in PowerPoint |
+| Upload rejected as pre-2007 | Genuinely old binary. PowerPoint: File → Info → Convert |
 | "Almost no selectable text" | Deck is images of slides, not text |
 | Nothing happens on Generate | No API key, or a spending cap hit — check Settings |
 | Everything is very slow | First run downloads the embedding model, once |

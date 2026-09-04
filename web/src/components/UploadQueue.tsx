@@ -66,6 +66,12 @@ export function useUploadQueue(moduleId: string | undefined, onChanged: () => vo
           await api.cancelIngest(source.id).catch(() => undefined);
         }
 
+        // A note from the upload itself — "named .ppt, actually a .pptx" —
+        // belongs beside the file it is about, alongside anything ingestion
+        // goes on to notice.
+        const uploadNote = (source as { note?: string }).note;
+        if (uploadNote) patch(item.id, { warnings: [uploadNote] });
+
         const job: IngestJob = await api.ingestStatus(source.id);
         patch(item.id, {
           message: job.message,
@@ -77,7 +83,10 @@ export function useUploadQueue(moduleId: string | undefined, onChanged: () => vo
             status: 'done',
             message: `${job.result?.chunks ?? 0} chunks · ${job.result?.figures ?? 0} figures`,
             scanned: job.result?.likelyScanned ?? false,
-            ...(job.result?.warnings?.length ? { warnings: job.result.warnings } : {}),
+            warnings: [
+              ...(uploadNote ? [uploadNote] : []),
+              ...(job.result?.warnings ?? []),
+            ],
           });
           return;
         }

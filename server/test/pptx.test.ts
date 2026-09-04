@@ -51,6 +51,46 @@ after(async () => {
 
 const figureDir = () => fs.mkdtempSync(path.join(tempDir, 'figs-'));
 
+/** Posts a file exactly as the browser's file picker does. */
+function uploadFile(moduleId: string, filename: string, body: Buffer) {
+  const boundary = `----processortest${Math.random().toString(16).slice(2)}`;
+  const payload = Buffer.concat([
+    Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="title"\r\n\r\nA lecture\r\n` +
+        `--${boundary}\r\nContent-Disposition: form-data; name="type"\r\n\r\nslides\r\n` +
+        `--${boundary}\r\nContent-Disposition: form-data; name="file"; ` +
+        `filename="${filename}"\r\nContent-Type: application/octet-stream\r\n\r\n`,
+    ),
+    body,
+    Buffer.from(`\r\n--${boundary}--\r\n`),
+  ]);
+
+  return app.inject({
+    method: 'POST',
+    url: `/api/modules/${moduleId}/sources`,
+    headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+    payload,
+  });
+}
+
+/** Ingestion is a background job, so the result has to be waited for. */
+async function ingestAndWait(sourceId: string) {
+  const started = await app.inject({ method: 'POST', url: `/api/sources/${sourceId}/ingest` });
+  assert.equal(started.statusCode, 202, started.body);
+
+  for (let wait = 0; wait < 200; wait++) {
+    const job = JSON.parse(
+      (await app.inject({ method: 'GET', url: `/api/sources/${sourceId}/ingest` })).body,
+    ) as { phase: string; error?: string };
+    if (['done', 'failed', 'cancelled'].includes(job.phase)) {
+      assert.equal(job.phase, 'done', job.error ?? job.phase);
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 40));
+  }
+  assert.fail('ingestion never finished');
+}
+
 // ---------------------------------------------------------------------------
 
 test('a lecture deck yields one block per slide, in order', async () => {
@@ -227,6 +267,96 @@ test('the upload route accepts .pptx', async () => {
     .all();
   assert.ok(chunks.length > 0, 'a PowerPoint deck produced no chunks');
   assert.ok(chunks.some((chunk) => /oxygen consumption falls/.test(chunk.text)));
+});
+
+// ---------------------------------------------------------------------------
+// What a file actually is, versus what it is called
+// ---------------------------------------------------------------------------
+
+test('a .pptx named .ppt is read rather than refused', async () => {
+  const { resolveFormat } = await import('../src/ingest/sniff.js');
+
+  // The case that prompted all of this: a university VLE served a lecture as
+  // "Cell Signaling 1_2025_26_Slides.ppt" and it was rejected on the name
+  // alone, throwing away a perfectly readable deck.
+  const verdict = resolveFormat(path.join(FIXTURES, 'lecture-mislabelled.ppt'), '.ppt');
+
+  assert.equal(verdict.effectiveExtension, '.pptx');
+  assert.equal(verdict.refuse, undefined);
+  assert.match(verdict.note ?? '', /really a \.pptx/);
+});
+
+test('a genuinely old binary .ppt is identified as one', async () => {
+  const { resolveFormat, containerKind } = await import('../src/ingest/sniff.js');
+
+  assert.equal(containerKind(path.join(FIXTURES, 'lecture-old-format.ppt')), 'ole');
+
+  const verdict = resolveFormat(path.join(FIXTURES, 'lecture-old-format.ppt'), '.ppt');
+  assert.ok(verdict.refuse, 'an unreadable file must be refused');
+
+  // The message has to carry the fix. "Unsupported file type" leaves someone
+  // with thirty lectures and nowhere to go, which is exactly what happened.
+  assert.match(verdict.refuse!, /Save As/i);
+  assert.match(verdict.refuse!, /pptx/);
+  assert.match(verdict.refuse!, /Convert|soffice/, 'say how to do a whole folder');
+});
+
+test('uploading a .pptx named .ppt succeeds and says what happened', async () => {
+  const moduleId = JSON.parse(
+    (
+      await app.inject({
+        method: 'POST',
+        url: '/api/modules',
+        payload: { title: 'Mislabelled' },
+      })
+    ).body,
+  ).id as string;
+
+  const response = await uploadFile(
+    moduleId,
+    'lecture-mislabelled.ppt',
+    fs.readFileSync(path.join(FIXTURES, 'lecture-mislabelled.ppt')),
+  );
+
+  assert.equal(response.statusCode, 201, response.body);
+  const source = JSON.parse(response.body) as { id: string; path: string; note?: string };
+
+  // Renamed on disk, so every later stage sees a consistent file and
+  // re-ingesting picks the right parser without sniffing again.
+  assert.match(source.path, /\.pptx$/);
+  assert.match(source.note ?? '', /really a \.pptx/);
+
+  await ingestAndWait(source.id);
+  const chunks = getDb().select().from(schema.chunks).where(eqSource(source.id)).all();
+  assert.ok(chunks.length > 0, 'the mislabelled deck produced no chunks');
+});
+
+test('uploading a genuinely old .ppt is refused with the fix', async () => {
+  const moduleId = JSON.parse(
+    (
+      await app.inject({
+        method: 'POST',
+        url: '/api/modules',
+        payload: { title: 'Old binary' },
+      })
+    ).body,
+  ).id as string;
+
+  const response = await uploadFile(
+    moduleId,
+    'lecture-old-format.ppt',
+    fs.readFileSync(path.join(FIXTURES, 'lecture-old-format.ppt')),
+  );
+
+  assert.equal(response.statusCode, 400);
+  const { error } = JSON.parse(response.body) as { error: string };
+
+  // The earlier version of this test asserted only /pptx/i, which the phrase
+  // "Supported: .pdf, .pptx, …" satisfied — so it passed while the helpful
+  // message was never reached. Assert the actual advice.
+  assert.match(error, /Save As/i, `unhelpful message: ${error}`);
+  assert.match(error, /pre-2007|binary/i);
+  assert.doesNotMatch(error, /^Unsupported file type/);
 });
 
 test('the old binary .ppt is refused at the door, with the fix named', async () => {

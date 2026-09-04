@@ -15,9 +15,20 @@ import {
   proposeSectionsForSource,
 } from '../services/mapping.js';
 import { describeLocation } from '../services/search.js';
+import { resolveFormat } from '../ingest/sniff.js';
 
 const SOURCE_TYPES = ['slides', 'transcript', 'textbook', 'notes', 'past_paper'] as const;
 const ALLOWED_EXTENSIONS = new Set(['.pdf', '.pptx', '.docx', '.txt', '.md', '.vtt', '.srt']);
+
+/**
+ * Extensions accepted at the door so their contents can be looked at.
+ *
+ * A file called `.ppt` is very often a modern .pptx that a VLE or a person
+ * named wrongly, and refusing it on the name alone throws away a perfectly
+ * readable lecture. These are opened, sniffed, and either read as what they
+ * really are or refused with the actual fix — see ingest/sniff.ts.
+ */
+const SNIFFED_EXTENSIONS = new Set(['.ppt', '.doc', '.xls']);
 
 class FileTooLargeError extends Error {
   readonly code = 'FST_REQ_FILE_TOO_LARGE';
@@ -74,7 +85,9 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
 
     const sourceId = newId();
     const fields = new Map<string, string>();
-    let stored: { filename: string; extension: string; relativePath: string } | null = null;
+    let stored:
+      | { filename: string; extension: string; relativePath: string; note?: string }
+      | null = null;
     let rejection: { code: number; error: string } | null = null;
     let writtenPath: string | null = null;
     let currentFilename = 'That file';
@@ -95,10 +108,12 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
 
         currentFilename = part.filename;
         const extension = path.extname(part.filename).toLowerCase();
-        if (!ALLOWED_EXTENSIONS.has(extension)) {
+        if (!ALLOWED_EXTENSIONS.has(extension) && !SNIFFED_EXTENSIONS.has(extension)) {
           rejection = {
             code: 400,
-            error: `Unsupported file type "${extension}". Supported: ${[...ALLOWED_EXTENSIONS].join(', ')}`,
+            error:
+              `Unsupported file type "${extension}". Supported: ` +
+              `${[...ALLOWED_EXTENSIONS].join(', ')}`,
           };
           await part.toBuffer().catch(() => undefined);
           continue;
@@ -115,7 +130,37 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
         // before this is reached, but it can be configured not to.
         if (part.file.truncated) throw new FileTooLargeError();
 
-        stored = { filename: part.filename, extension, relativePath };
+        // What it actually is, now that there are bytes to look at. A `.ppt`
+        // that is really a `.pptx` is read as one; a genuinely old binary is
+        // refused here with the fix, rather than being accepted and then
+        // failing confusingly during ingestion.
+        const verdict = resolveFormat(absolutePath, extension);
+        if (verdict.refuse) {
+          fs.rmSync(absolutePath, { force: true });
+          rejection = { code: 400, error: verdict.refuse };
+          writtenPath = null;
+          continue;
+        }
+
+        let finalPath = relativePath;
+        if (verdict.effectiveExtension !== extension) {
+          // Renamed on disk so every later stage sees a consistent file, and
+          // so re-ingesting picks the right parser without sniffing again.
+          finalPath = storedPath(
+            'media',
+            'sources',
+            moduleId,
+            `${sourceId}${verdict.effectiveExtension}`,
+          );
+          fs.renameSync(absolutePath, fromStoredPath(finalPath));
+        }
+
+        stored = {
+          filename: part.filename,
+          extension: verdict.effectiveExtension,
+          relativePath: finalPath,
+          ...(verdict.note ? { note: verdict.note } : {}),
+        };
         writtenPath = null;
       }
     } catch (error) {
@@ -160,7 +205,11 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
       .run();
 
     reply.code(201);
-    return db.select().from(schema.sources).where(eq(schema.sources.id, sourceId)).get();
+    const source = db.select().from(schema.sources).where(eq(schema.sources.id, sourceId)).get();
+    // The note travels with the response rather than being stored: it is about
+    // this upload ("named .ppt, actually a .pptx"), not a property of the
+    // source, and it is only worth saying once.
+    return stored.note ? { ...source, note: stored.note } : source;
   });
 
   app.get('/api/sources/:id', async (request, reply) => {

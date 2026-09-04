@@ -23,7 +23,16 @@ const TYPE_ICON: Record<SourceType, IconName> = {
   past_paper: 'question',
 };
 
-const ACCEPT = '.pdf,.pptx,.docx,.txt,.md,.vtt,.srt';
+/**
+ * `.ppt` and `.doc` are listed so the file picker will show them.
+ *
+ * They are not supported formats — they are formats worth *opening*, because a
+ * file named `.ppt` is very often a modern `.pptx` that a VLE named wrongly.
+ * Leaving them out of this list hides the file in the picker dialog entirely,
+ * so the person cannot even try. The server checks the actual bytes and either
+ * reads it or explains how to convert it.
+ */
+const ACCEPT = '.pdf,.pptx,.ppt,.docx,.doc,.txt,.md,.vtt,.srt';
 
 export function SourcesPage() {
   const { moduleId } = useParams<{ moduleId: string }>();
@@ -117,9 +126,18 @@ export function SourcesPage() {
           <span className="mt-2 text-sm font-medium">
             Drop files here, or click to choose
           </span>
+          {/*
+            Written out rather than derived from ACCEPT, which now includes
+            .ppt and .doc so the file picker will show them. Those are opened
+            and checked, not supported — listing them here as though they were
+            would promise something that is only sometimes true.
+          */}
           <span className="mt-1 text-xs text-muted">
-            {ACCEPT.replace(/\./g, '').replace(/,/g, ', ')} · drop a whole module at once and
-            walk away
+            pdf, pptx, docx, txt, md, vtt, srt · drop a whole module at once and walk away
+          </span>
+          <span className="mt-0.5 text-2xs text-faint">
+            An old .ppt or .doc is opened and checked — many are really the modern format
+            underneath
           </span>
           {/*
             The size limit is worth stating before you hit it. A scanned
