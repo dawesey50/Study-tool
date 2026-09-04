@@ -21,6 +21,16 @@ export interface QueueItem {
   message: string;
   sourceId?: string;
   scanned?: boolean;
+  /**
+   * What ingestion noticed but did not fail on — speaker notes found, half the
+   * slides empty, a terse deck with little to extract from.
+   *
+   * These were generated and thrown away, which made them worse than useless:
+   * the parser spends real effort deciding that a deck has no speaker notes
+   * and will therefore give concept extraction very little to go on, and then
+   * the person who could act on it never sees it and blames the model.
+   */
+  warnings?: string[];
   progress?: { done: number; total: number };
 }
 
@@ -67,6 +77,7 @@ export function useUploadQueue(moduleId: string | undefined, onChanged: () => vo
             status: 'done',
             message: `${job.result?.chunks ?? 0} chunks · ${job.result?.figures ?? 0} figures`,
             scanned: job.result?.likelyScanned ?? false,
+            ...(job.result?.warnings?.length ? { warnings: job.result.warnings } : {}),
           });
           return;
         }
@@ -260,6 +271,22 @@ export function UploadQueueList({
                   will have nothing to work with. It needs OCR.
                 </p>
               )}
+
+              {/*
+                Not errors — the file ingested. They are what the parser noticed
+                about the material, and they are the difference between "the
+                concepts are thin" and "the concepts are thin because this deck
+                is forty bullet fragments with no speaker notes".
+              */}
+              {!item.scanned &&
+                item.warnings?.map((warning) => (
+                  <p
+                    key={warning}
+                    className="mt-1.5 rounded border border-line bg-panel px-2 py-1 text-2xs leading-relaxed text-muted"
+                  >
+                    {warning}
+                  </p>
+                ))}
             </li>
           );
         })}

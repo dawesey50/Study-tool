@@ -23,7 +23,7 @@ const TYPE_ICON: Record<SourceType, IconName> = {
   past_paper: 'question',
 };
 
-const ACCEPT = '.pdf,.docx,.txt,.md,.vtt,.srt';
+const ACCEPT = '.pdf,.pptx,.docx,.txt,.md,.vtt,.srt';
 
 export function SourcesPage() {
   const { moduleId } = useParams<{ moduleId: string }>();

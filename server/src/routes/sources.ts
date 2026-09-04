@@ -17,7 +17,7 @@ import {
 import { describeLocation } from '../services/search.js';
 
 const SOURCE_TYPES = ['slides', 'transcript', 'textbook', 'notes', 'past_paper'] as const;
-const ALLOWED_EXTENSIONS = new Set(['.pdf', '.docx', '.txt', '.md', '.vtt', '.srt']);
+const ALLOWED_EXTENSIONS = new Set(['.pdf', '.pptx', '.docx', '.txt', '.md', '.vtt', '.srt']);
 
 class FileTooLargeError extends Error {
   readonly code = 'FST_REQ_FILE_TOO_LARGE';

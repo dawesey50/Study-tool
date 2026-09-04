@@ -111,11 +111,24 @@ test('an oversized upload leaves no half-written file behind', async () => {
 });
 
 test('an unsupported file type lists what is supported', async () => {
-  const response = await upload('lecture.pptx', Buffer.from('not a pdf'));
+  // Keynote rather than PowerPoint: .pptx used to be the example here and is
+  // now supported, which is exactly the kind of stale fixture that turns a
+  // test into a check that nothing has improved.
+  const response = await upload('lecture.key', Buffer.from('not a pdf'));
   assert.equal(response.statusCode, 400);
   const { error } = JSON.parse(response.body) as { error: string };
-  assert.match(error, /\.pptx/);
+  assert.match(error, /\.key/);
   assert.match(error, /\.pdf/, 'say what would work instead');
+  assert.match(error, /\.pptx/, 'PowerPoint is the commonest lecture format');
+});
+
+test('the old binary .ppt names the two-click fix', async () => {
+  const response = await upload('lecture.ppt', Buffer.from('old office binary'));
+  assert.equal(response.statusCode, 400);
+  const { error } = JSON.parse(response.body) as { error: string };
+  // A student with thirty .ppt files needs to know about Save As, not that
+  // the format is unsupported.
+  assert.match(error, /pptx/i, `unhelpful: ${error}`);
 });
 
 test('a file within the limit still uploads', async () => {

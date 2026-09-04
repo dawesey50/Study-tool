@@ -43,7 +43,7 @@ which is where the spec's two differentiators live — are not started.
 | Spec | Status | Notes |
 |---|---|---|
 | §2 Local-first, single user, SQLite + media folder | **Done** | One file plus a folder, no accounts, works offline once the model is cached |
-| §2 Inputs: slides, transcripts, textbook, own notes | **Done** | PDF, DOCX, TXT/MD, VTT/SRT |
+| §2 Inputs: slides, transcripts, textbook, own notes | **Done** | PDF, **PPTX** (with speaker notes), DOCX, TXT/MD, VTT/SRT |
 | §2 No audio pipeline | **Done** | Correctly out of scope |
 | §3 Frontend stack | **Done** | React/TS/Vite/Tailwind/TanStack/TipTap in use; KaTeX and Mermaid now render equations and pathway diagrams, loaded on demand |
 | §3 Backend stack | **Done** | Fastify, better-sqlite3, Drizzle, sqlite-vec, local media |

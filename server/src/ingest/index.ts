@@ -11,6 +11,7 @@ import { fromStoredPath, toStoredPath } from '../lib/paths.js';
 import { proposeSectionsForSource } from '../services/mapping.js';
 import { chunkBlocks } from './chunk.js';
 import { parseDocx } from './docx.js';
+import { parsePptx } from './pptx.js';
 import { IngestCancelled, parsePdf } from './pdf.js';
 import { parseTranscript } from './transcript.js';
 import type { ParseResult } from './types.js';
@@ -202,6 +203,10 @@ async function parseFile(
     });
   }
 
+  if (extension === '.pptx') {
+    return parsePptx(absolutePath, options);
+  }
+
   if (extension === '.docx') {
     return parseDocx(absolutePath, options);
   }
@@ -211,6 +216,10 @@ async function parseFile(
   }
 
   throw new Error(
-    `Unsupported file type "${extension}". Supported: .pdf, .docx, .txt, .md, .vtt, .srt`,
+    extension === '.ppt' || extension === '.doc'
+      ? `"${extension}" is the old binary Office format, which cannot be read. Open it and ` +
+        `save it again as "${extension}x" — PowerPoint and Word both offer that directly.`
+      : `Unsupported file type "${extension}". Supported: .pdf, .pptx, .docx, .txt, .md, ` +
+        '.vtt, .srt',
   );
 }
