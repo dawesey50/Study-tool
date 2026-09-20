@@ -174,9 +174,9 @@ export const config = {
      */
     models: {
       hierarchyProposal: str('LLM_MODEL_HIERARCHY', 'claude-sonnet-5'),
-      conceptExtraction: str('LLM_MODEL_CONCEPTS', 'gemini-2.5-flash'),
-      transcriptCleanup: str('LLM_MODEL_TRANSCRIPT', 'gemini-2.5-flash'),
-      figureCaption: str('LLM_MODEL_FIGURE_CAPTION', 'gemini-2.5-flash'),
+      conceptExtraction: str('LLM_MODEL_CONCEPTS', 'gemini-3.6-flash'),
+      transcriptCleanup: str('LLM_MODEL_TRANSCRIPT', 'gemini-3.6-flash'),
+      figureCaption: str('LLM_MODEL_FIGURE_CAPTION', 'gemini-3.6-flash'),
       noteGeneration: str('LLM_MODEL_NOTES', 'claude-sonnet-5'),
       sectionRewrite: str('LLM_MODEL_REWRITE', 'claude-sonnet-5'),
       questionGeneration: str('LLM_MODEL_QUESTIONS', 'claude-sonnet-5'),
@@ -189,7 +189,7 @@ export const config = {
      */
     fallbackModels: {
       anthropic: str('LLM_FALLBACK_MODEL_ANTHROPIC', 'claude-haiku-4-5'),
-      gemini: str('LLM_FALLBACK_MODEL_GEMINI', 'gemini-2.5-flash'),
+      gemini: str('LLM_FALLBACK_MODEL_GEMINI', 'gemini-3.6-flash'),
       groq: str('LLM_FALLBACK_MODEL_GROQ', 'llama-3.3-70b-versatile'),
     },
 

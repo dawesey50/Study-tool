@@ -370,7 +370,7 @@ test('the status route reports what is configured and where the caps sit', async
   // Gemini has no key here, so concept extraction really runs on Claude. The
   // table has to say that rather than repeat what .env asked for.
   const concepts = body.routing.find((row) => row.task === 'concept_extraction');
-  assert.equal(concepts?.configuredModel, 'gemini-2.5-flash');
+  assert.equal(concepts?.configuredModel, 'gemini-3.6-flash');
   assert.equal(concepts?.substituted, true);
   assert.equal(concepts?.effectiveModel, 'claude-haiku-4-5');
   assert.ok(body.caps.maxIterations > 0);
