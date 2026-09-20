@@ -440,7 +440,27 @@ const SERVER_PORT = Number(process.env.PORT) || 5174;
   if (live) process.stdout.write(`\r${' '.repeat(78)}\r`);
 
   child.kill();
-  fs.rmSync(scratch, { recursive: true, force: true });
+
+  // On Windows, the OS can hold the sqlite file open for a moment after the
+  // process that had it is killed — deleting the scratch folder right away
+  // throws EBUSY often enough to be the normal case, not an edge case, and an
+  // uncaught EBUSY here used to take the whole doctor down before it ever
+  // printed whether the server had actually started. None of this reflects
+  // on the check itself: the scratch folder is disposable, so a few retries
+  // with a short wait, and giving up quietly if Windows is still holding it,
+  // is the whole fix.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      fs.rmSync(scratch, { recursive: true, force: true });
+      break;
+    } catch (error) {
+      if (attempt === 4) {
+        note(`Could not clean up the temporary check folder at ${scratch} — safe to delete by hand.`);
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
+    }
+  }
 
   if (spawnError) {
     report(false, 'Server could not be launched', spawnError.message);
