@@ -50,14 +50,35 @@ export function ConceptList({ moduleId, sectionId }: { moduleId: string; section
     retry: false,
   });
 
+  /**
+   * The finished job, kept after polling stops.
+   *
+   * A run that extracts nothing and says why used to be indistinguishable from
+   * one that quietly worked: the toast read "0 concepts across 0 sections · 1
+   * skipped" with the actual reason — usually a provider error worth
+   * fixing — sitting unread in `job.skipped[].reason`, which nothing in the
+   * page ever rendered. This is shown until the next run starts.
+   */
+  const [lastResult, setLastResult] = useState<typeof job | null>(null);
+
   useEffect(() => {
     if (!job) return;
     if (job.running === false || ['done', 'failed', 'cancelled'].includes(job.phase)) {
       setWatching(false);
+      setLastResult(job);
       queryClient.invalidateQueries({ queryKey: ['concepts', sectionId] });
       queryClient.invalidateQueries({ queryKey: ['llm-usage'] });
-      if (job.phase === 'failed') toast.error('Extraction stopped', job.error ?? job.message);
-      else if (job.phase === 'done') toast.success('Concepts extracted', job.message);
+      if (job.phase === 'failed') {
+        toast.error('Extraction stopped', job.error ?? job.message);
+      } else if (job.phase === 'done') {
+        // The reason a skip happened is more useful than the summary line
+        // that hides it, and it is the whole point of this toast existing.
+        const reasons = job.skipped.map((entry) => entry.reason);
+        toast.success(
+          'Concepts extracted',
+          reasons.length ? `${job.message} — ${reasons[0]}` : job.message,
+        );
+      }
     }
   }, [job, queryClient, sectionId, toast]);
 
@@ -184,6 +205,22 @@ export function ConceptList({ moduleId, sectionId }: { moduleId: string; section
           {data.plausibility.message}
         </p>
       )}
+
+      {/*
+        The reason a run produced nothing, kept on screen rather than only in
+        a toast that has already vanished by the time someone reads back to
+        find out what happened.
+      */}
+      {lastResult?.skipped
+        .filter((entry) => entry.sectionId === sectionId)
+        .map((entry, index) => (
+          <p
+            key={index}
+            className="mt-3 rounded-xl border border-flag/30 bg-flag-soft px-3 py-2 text-xs leading-relaxed text-flag"
+          >
+            <strong>This section was skipped:</strong> {entry.reason}
+          </p>
+        ))}
 
       {concepts.length === 0 && !running && (
         <div className="card mt-4 px-6 py-10 text-center">
