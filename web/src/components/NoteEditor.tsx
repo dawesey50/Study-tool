@@ -67,6 +67,17 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
   const saveTimer = useRef<number | null>(null);
   const loadedSection = useRef<string | null>(null);
   /**
+   * Guards against two saves running at once. Without it, typing enough to
+   * cross the debounce twice while the first request is still in flight — a
+   * few blocks to create, each awaited in turn, is enough — starts a second
+   * save that computes "created" from the same stale serverBlocks.current as
+   * the first, and both try to create the same new block with the same id.
+   * The second one then fails outright: a duplicate key, on a block that was
+   * never actually a duplicate, just double-submitted.
+   */
+  const saving = useRef(false);
+  const rerunAfterSave = useRef(false);
+  /**
    * Read from inside handlePaste/handleDrop, which are captured once into the
    * options object below and not reliably refreshed on every render — a ref
    * is always current, where a closure over `editor` itself would not be.
@@ -238,7 +249,7 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
     [editor, blocks],
   );
 
-  const save = useCallback(async () => {
+  const saveOnce = useCallback(async () => {
     if (!editor) return;
     const desired = docToBlocks(editor.getJSON() as PmNode);
     const current = serverBlocks.current;
@@ -312,6 +323,27 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
       toast.error('Could not save your notes', (error as Error).message);
     }
   }, [editor, sectionId, queryClient, toast]);
+
+  const save = useCallback(async () => {
+    if (saving.current) {
+      // A save is already in flight against the state this call would have
+      // used. Rerunning once it finishes picks up everything, including
+      // whatever changed during the wait, without two requests racing to
+      // create the same new block under the same id.
+      rerunAfterSave.current = true;
+      return;
+    }
+    saving.current = true;
+    try {
+      await saveOnce();
+    } finally {
+      saving.current = false;
+      if (rerunAfterSave.current) {
+        rerunAfterSave.current = false;
+        void save();
+      }
+    }
+  }, [saveOnce]);
 
   const scheduleSave = useCallback(() => {
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
