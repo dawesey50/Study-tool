@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import tls from 'node:tls';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -159,7 +160,154 @@ console.log(`  project    ${root}\n`);
   if (!ok) finish();
 }
 
-// --- 6. Ports ----------------------------------------------------------------
+// --- 6. LLM provider connectivity (TLS) -------------------------------------
+//
+// "Every provider failed" in the app almost always means one of two very
+// different things, and the app itself cannot tell them apart because both
+// show up as a failed fetch: either the provider is genuinely down (rare,
+// self-resolving), or something on this machine or network — antivirus
+// "HTTPS scanning", a school/office proxy, a VPN's "threat protection" — is
+// intercepting the TLS connection and presenting its own certificate instead
+// of the real one. Node refuses that certificate (correctly), and the error
+// that reaches the app is a cryptic code like SELF_SIGNED_CERT_IN_CHAIN with
+// no indication of what's actually doing the intercepting.
+//
+// This check connects to each provider's real endpoint and reads back
+// whichever certificate actually arrives. `rejectUnauthorized: false` here is
+// deliberate and diagnostic-only — it lets an untrusted certificate through
+// so its issuer name can be read and reported, which is the one piece of
+// information that turns "fetch failed" into "it's your antivirus". The app's
+// own requests never set this; they keep normal certificate verification on.
+
+const LLM_HOSTS = [
+  { host: 'api.anthropic.com', name: 'Anthropic' },
+  { host: 'generativelanguage.googleapis.com', name: 'Gemini' },
+  { host: 'api.groq.com', name: 'Groq' },
+];
+
+// Issuer names left behind by common software that intercepts HTTPS traffic
+// to scan it. Matching one names the actual culprit instead of leaving it as
+// a guess.
+const KNOWN_INTERCEPTORS = [
+  'kaspersky',
+  'avast',
+  'avg',
+  'bitdefender',
+  'eset',
+  'norton',
+  'symantec',
+  'mcafee',
+  'malwarebytes',
+  'sophos',
+  'trend micro',
+  'f-secure',
+  'webroot',
+  'zscaler',
+  'netskope',
+  'fortinet',
+  'forcepoint',
+  'palo alto',
+  'cisco umbrella',
+  'sonicwall',
+  'check point',
+  'barracuda',
+  'websense',
+  'bluecoat',
+  'blue coat',
+  'proofpoint',
+];
+
+function inspectTls(host) {
+  return new Promise((resolve) => {
+    const socket = tls.connect(
+      { host, port: 443, servername: host, timeout: 6000, rejectUnauthorized: false },
+      () => {
+        const cert = socket.getPeerCertificate(false);
+        resolve({
+          ok: true,
+          authorized: socket.authorized,
+          authorizationError: socket.authorizationError,
+          issuer: cert?.issuer,
+        });
+        socket.end();
+      },
+    );
+    socket.on('timeout', () => {
+      socket.destroy();
+      resolve({ ok: false, error: 'timed out' });
+    });
+    socket.on('error', (error) => {
+      resolve({ ok: false, error: error.message, code: error.code });
+    });
+  });
+}
+
+{
+  const proxyVars = ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy'].filter(
+    (key) => process.env[key],
+  );
+  const extraCaCerts = process.env.NODE_EXTRA_CA_CERTS;
+
+  const results = await Promise.all(
+    LLM_HOSTS.map(async ({ host, name }) => ({ host, name, result: await inspectTls(host) })),
+  );
+
+  const interceptedBy = new Set();
+  const lines = [];
+  for (const { host, name, result } of results) {
+    if (!result.ok) {
+      lines.push(`${name} (${host}): could not connect — ${result.error}`);
+      continue;
+    }
+    if (result.authorized) {
+      lines.push(`${name} (${host}): OK, real certificate trusted`);
+      continue;
+    }
+    const issuerName = result.issuer?.O || result.issuer?.CN || 'unknown issuer';
+    lines.push(
+      `${name} (${host}): certificate NOT trusted (${result.authorizationError}), ` +
+        `issued by "${issuerName}"`,
+    );
+    const match = KNOWN_INTERCEPTORS.find((needle) => issuerName.toLowerCase().includes(needle));
+    if (match) interceptedBy.add(issuerName);
+  }
+
+  const allOk = results.every(({ result }) => result.ok && result.authorized);
+  const detailParts = [lines.join('\n')];
+  if (proxyVars.length) {
+    detailParts.push(`\nProxy environment variables set: ${proxyVars.join(', ')}`);
+  }
+  if (extraCaCerts) {
+    detailParts.push(`\nNODE_EXTRA_CA_CERTS is set to: ${extraCaCerts}`);
+  }
+  if (interceptedBy.size) {
+    detailParts.push(
+      `\nThis certificate is issued by "${[...interceptedBy][0]}", which is intercepting ` +
+        'your HTTPS traffic to scan it — this is what is breaking LLM requests, not the app.\n' +
+        'Open that program\'s settings and look for "HTTPS scanning", "SSL/TLS scanning", or\n' +
+        '"encrypted connections scanning", and either turn it off or add an exception for\n' +
+        'node.exe / this project folder. Restart Processor afterwards.',
+    );
+  } else if (!allOk && !proxyVars.length) {
+    detailParts.push(
+      '\nNo known antivirus/proxy certificate was recognised, but the certificate presented ' +
+        'is still not the real one. This is most often a school, office, or public Wi-Fi\n' +
+        'network filtering HTTPS. Try the same check on a different network (e.g. a phone\n' +
+        'hotspot) to confirm.',
+    );
+  }
+
+  // Never a blocker: the app itself already surfaces this per-request, and a
+  // school network at the moment this runs is not a reason to stop the doctor
+  // from checking everything else.
+  console.log(`[${tick(allOk)}] LLM provider connectivity (TLS)`);
+  for (const line of detailParts.join('\n').split('\n')) {
+    if (line) console.log(`         ${line}`);
+  }
+  if (!allOk) note('At least one LLM provider is unreachable with a trusted certificate — see above.');
+}
+
+// --- 7. Ports ----------------------------------------------------------------
 
 async function portFree(port) {
   return new Promise((resolve) => {
@@ -210,7 +358,7 @@ const SERVER_PORT = Number(process.env.PORT) || 5174;
   }
 }
 
-// --- 7. Actually boot the server --------------------------------------------
+// --- 8. Actually boot the server --------------------------------------------
 //
 // Everything above can pass and the server still fail, so the last check is to
 // run it for real on a scratch database and see what it says.
