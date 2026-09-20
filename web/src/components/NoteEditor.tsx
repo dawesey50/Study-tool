@@ -559,37 +559,67 @@ function Toolbar({
         value={blockLabel}
         onChange={(event) => {
           const chain = editor.chain().focus();
-          switch (event.target.value) {
+          const target = event.target.value;
+          const inBlockquote = editor.isActive('blockquote');
+          const inCodeBlock = editor.isActive('codeBlock');
+
+          // Leave whatever special wrapper the cursor is in before entering a
+          // different one, so switching away from Extra knowledge/Summary/
+          // Diagram actually leaves it rather than converting the paragraph
+          // inside the wrapper and leaving the wrapper itself in place.
+          if (inCodeBlock && target !== 'Diagram') chain.toggleCodeBlock();
+          if (inBlockquote && target !== 'Extra knowledge' && target !== 'Summary') {
+            chain.toggleBlockquote();
+          }
+
+          switch (target) {
             case 'Heading 1':
-              chain.setNode('heading', { level: 1 }).run();
+              chain.setNode('heading', { level: 1 });
               break;
             case 'Heading 2':
-              chain.setNode('heading', { level: 2 }).run();
+              chain.setNode('heading', { level: 2 });
               break;
             case 'Heading 3':
-              chain.setNode('heading', { level: 3 }).run();
+              chain.setNode('heading', { level: 3 });
               break;
             case 'Bulleted list':
-              chain.toggleBulletList().run();
+              chain.toggleBulletList();
               break;
             case 'Numbered list':
-              chain.toggleOrderedList().run();
+              chain.toggleOrderedList();
+              break;
+            case 'Extra knowledge':
+              if (!inBlockquote) chain.toggleBlockquote();
+              chain.updateAttributes('blockquote', { variant: 'callout' });
+              break;
+            case 'Summary':
+              if (!inBlockquote) chain.toggleBlockquote();
+              chain.updateAttributes('blockquote', { variant: 'summary' });
+              break;
+            case 'Diagram':
+              if (!inCodeBlock) chain.setCodeBlock({ language: 'mermaid' });
               break;
             default:
-              chain.setParagraph().run();
+              chain.setParagraph();
           }
+          chain.run();
         }}
         className="rounded-md border border-line bg-panel px-2 py-1 text-xs"
         aria-label="Paragraph style"
       >
-        {['Paragraph', 'Heading 1', 'Heading 2', 'Heading 3', 'Bulleted list', 'Numbered list'].map(
-          (option) => (
-            <option key={option}>{option}</option>
-          ),
-        )}
-        {['Extra knowledge', 'Summary', 'Diagram'].includes(blockLabel) && (
-          <option>{blockLabel}</option>
-        )}
+        {[
+          'Paragraph',
+          'Heading 1',
+          'Heading 2',
+          'Heading 3',
+          'Bulleted list',
+          'Numbered list',
+          'Extra knowledge',
+          'Summary',
+          'Diagram',
+        ].map((option) => (
+          <option key={option}>{option}</option>
+        ))}
       </select>
 
       <Divider />
