@@ -24,6 +24,7 @@ import {
   type DocBlock,
   type PmNode,
 } from '../lib/blockMarkdown';
+import { blocksChanged, createSaveGate, shouldReloadVisibleContent } from '../lib/noteSync';
 import {
   BlockId,
   createLockGuard,
@@ -71,22 +72,12 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
   const saveTimer = useRef<number | null>(null);
   const loadedSection = useRef<string | null>(null);
   /**
-   * Guards against two saves running at once. Without it, typing enough to
-   * cross the debounce twice while the first request is still in flight — a
-   * few blocks to create, each awaited in turn, is enough — starts a second
-   * save that computes "created" from the same stale serverBlocks.current as
-   * the first, and both try to create the same new block with the same id.
-   * The second one then fails outright: a duplicate key, on a block that was
-   * never actually a duplicate, just double-submitted.
+   * Guards against two saves running at once, keyed by section rather than a
+   * single flag because this component doesn't remount when sectionId
+   * changes (only the editor instance underneath it does) — see noteSync.ts
+   * for the concurrency bug this closes.
    */
-  /**
-   * Keyed by section rather than a single flag: this component doesn't
-   * remount when sectionId changes (only the editor instance underneath it
-   * does), so a save still in flight for the section just navigated away
-   * from must never gate or trigger a rerun for the one navigated to.
-   */
-  const saving = useRef<Set<string>>(new Set());
-  const rerunAfterSave = useRef<Set<string>>(new Set());
+  const saveGate = useRef(createSaveGate());
   /** True between an edit and its save actually landing — see the reload effect below. */
   const dirty = useRef(false);
   /**
@@ -228,9 +219,12 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
     serverBlocks.current = blocks;
     lockedIds.current = new Set(blocks.filter((block) => block.locked).map((block) => block.id));
 
-    const alreadyLoaded = loadedSection.current === sectionId;
-    const serverChanged = JSON.stringify(previous) !== JSON.stringify(blocks);
-    if (alreadyLoaded && (dirty.current || !serverChanged)) return;
+    const shouldReload = shouldReloadVisibleContent({
+      alreadyLoadedThisSection: loadedSection.current === sectionId,
+      hasUnsavedLocalEdits: dirty.current,
+      serverBlocksChanged: blocksChanged(previous, blocks),
+    });
+    if (!shouldReload) return;
 
     editor.commands.setContent(
       blocksToDoc(
@@ -391,24 +385,12 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
     // later, since by the time this call resolves the component's current
     // section may already be a different one.
     const forSection = sectionId;
+    if (!saveGate.current.tryEnter(forSection)) return;
 
-    if (saving.current.has(forSection)) {
-      // A save is already in flight against the state this call would have
-      // used. Rerunning once it finishes picks up everything, including
-      // whatever changed during the wait, without two requests racing to
-      // create the same new block under the same id.
-      rerunAfterSave.current.add(forSection);
-      return;
-    }
-    saving.current.add(forSection);
     try {
       await saveOnce();
     } finally {
-      saving.current.delete(forSection);
-      if (rerunAfterSave.current.has(forSection)) {
-        rerunAfterSave.current.delete(forSection);
-        void save();
-      }
+      if (saveGate.current.exit(forSection)) void save();
     }
   }, [saveOnce, sectionId]);
 
