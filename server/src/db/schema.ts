@@ -70,7 +70,7 @@ export const sections = sqliteTable(
 // Sources, chunks and figures
 // ---------------------------------------------------------------------------
 
-export type SourceType = 'slides' | 'transcript' | 'textbook' | 'notes' | 'past_paper';
+export type SourceType = 'slides' | 'transcript' | 'textbook' | 'notes' | 'past_paper' | 'pasted';
 export type SourceStatus = 'uploaded' | 'ingesting' | 'ingested' | 'failed';
 
 /**

@@ -21,6 +21,7 @@ const TYPE_ICON: Record<SourceType, IconName> = {
   textbook: 'book',
   notes: 'edit',
   past_paper: 'question',
+  pasted: 'image',
 };
 
 /**
@@ -277,15 +278,17 @@ function SourceCard({ source, moduleId }: { source: Source; moduleId: string }) 
 
         <div className="flex shrink-0 items-center gap-1.5">
           <StatusPill status={source.status} />
-          <button
-            className="btn-icon"
-            onClick={() => reingest.mutate()}
-            disabled={reingest.isPending}
-            title="Re-ingest — parse the file again"
-            aria-label="Re-ingest"
-          >
-            <Icon name="refresh" size={15} className={reingest.isPending ? 'animate-spin' : ''} />
-          </button>
+          {source.type !== 'pasted' && (
+            <button
+              className="btn-icon"
+              onClick={() => reingest.mutate()}
+              disabled={reingest.isPending}
+              title="Re-ingest — parse the file again"
+              aria-label="Re-ingest"
+            >
+              <Icon name="refresh" size={15} className={reingest.isPending ? 'animate-spin' : ''} />
+            </button>
+          )}
           <button
             className="btn-icon hover:text-flag"
             onClick={askThenDelete}

@@ -60,6 +60,29 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
   const lockedIds = useRef<Set<string>>(new Set());
   const saveTimer = useRef<number | null>(null);
   const loadedSection = useRef<string | null>(null);
+  /**
+   * Read from inside handlePaste/handleDrop, which are captured once into the
+   * options object below and not reliably refreshed on every render — a ref
+   * is always current, where a closure over `editor` itself would not be.
+   */
+  const editorRef = useRef<Editor | null>(null);
+
+  const insertPastedImage = useCallback(
+    async (file: File) => {
+      try {
+        const figure = await api.uploadSectionImage(sectionId, file);
+        editorRef.current
+          ?.chain()
+          .focus()
+          .insertFigure({ src: figure.url, alt: '', figureId: figure.id })
+          .run();
+        queryClient.invalidateQueries({ queryKey: ['section-figures', sectionId] });
+      } catch (error) {
+        toast.error('Could not add that image', (error as Error).message);
+      }
+    },
+    [sectionId, queryClient, toast],
+  );
 
   const { data: blocks, isLoading } = useQuery({
     queryKey: ['notes', sectionId],
@@ -103,6 +126,20 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
           class: 'prose-notes focus:outline-none',
           spellcheck: 'true',
         },
+        handlePaste: (_view, event) => {
+          const file = firstImageFile(event.clipboardData?.files);
+          if (!file) return false;
+          event.preventDefault();
+          void insertPastedImage(file);
+          return true;
+        },
+        handleDrop: (_view, event) => {
+          const file = firstImageFile(event.dataTransfer?.files);
+          if (!file) return false;
+          event.preventDefault();
+          void insertPastedImage(file);
+          return true;
+        },
       },
       onUpdate: () => {
         scheduleSave();
@@ -112,6 +149,7 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
     },
     [sectionId],
   );
+  editorRef.current = editor ?? null;
 
   /**
    * Load this section's blocks into the document exactly once.
@@ -408,6 +446,15 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
       )}
     </div>
   );
+}
+
+/** The first image in a paste or drop, ignoring any other files or text also carried alongside it. */
+function firstImageFile(list: FileList | null | undefined): File | null {
+  if (!list) return null;
+  for (const file of list) {
+    if (file.type.startsWith('image/')) return file;
+  }
+  return null;
 }
 
 const ORIGIN_LABEL: Record<NoteBlock['origin'], string> = {

@@ -1,8 +1,9 @@
-import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRef, useState } from 'react';
 import { api, flattenSections } from '../../lib/api';
 import { Icon } from '../ui/Icon';
 import { Modal } from '../ui/Modal';
+import { useToast } from '../ui/Toast';
 
 /**
  * The two pickers behind the figure and cross-reference insert commands.
@@ -30,13 +31,31 @@ export function FigurePicker({
     queryFn: () => api.getSectionFigures(sectionId),
     enabled: open,
   });
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const [uploading, setUploading] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  const upload = async (file: File) => {
+    setUploading(true);
+    try {
+      const figure = await api.uploadSectionImage(sectionId, file);
+      queryClient.invalidateQueries({ queryKey: ['section-figures', sectionId] });
+      onChoose({ src: figure.url, alt: '', caption: '', figureId: figure.id });
+      onClose();
+    } catch (error) {
+      toast.error('Could not add that image', (error as Error).message);
+    } finally {
+      setUploading(false);
+    }
+  };
 
   return (
     <Modal
       open={open}
       onClose={onClose}
       title="Place a figure"
-      description="Figures pulled out of the sources mapped to this section."
+      description="Figures pulled out of the sources mapped to this section, or one of your own."
       width="max-w-2xl"
       footer={
         <button className="btn" onClick={onClose}>
@@ -44,12 +63,32 @@ export function FigurePicker({
         </button>
       }
     >
+      <input
+        ref={fileInput}
+        type="file"
+        accept="image/png,image/jpeg,image/gif,image/webp"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          if (file) void upload(file);
+        }}
+      />
+      <button
+        className="btn mb-3 w-full justify-center"
+        disabled={uploading}
+        onClick={() => fileInput.current?.click()}
+      >
+        <Icon name="image" size={14} />
+        {uploading ? 'Adding your image…' : 'Upload your own image (photo, screenshot…)'}
+      </button>
+
       {isLoading && <div className="skeleton h-40" />}
 
       {figures?.length === 0 && (
         <p className="rounded-lg border border-line px-3 py-6 text-center text-sm leading-relaxed text-muted">
-          No figures are attached to this section yet. Upload some slides and map them here, and
-          whatever the extractor finds shows up in this list.
+          No figures are attached to this section yet from an uploaded source — use the button
+          above to add your own instead.
         </p>
       )}
 

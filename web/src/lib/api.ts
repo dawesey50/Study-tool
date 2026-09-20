@@ -31,7 +31,7 @@ export interface SectionNode {
   children: SectionNode[];
 }
 
-export type SourceType = 'slides' | 'transcript' | 'textbook' | 'notes' | 'past_paper';
+export type SourceType = 'slides' | 'transcript' | 'textbook' | 'notes' | 'past_paper' | 'pasted';
 export type SourceStatus = 'uploaded' | 'ingesting' | 'ingested' | 'failed';
 
 export interface SectionMapping {
@@ -763,6 +763,11 @@ export const api = {
 
   getSectionFigures: (sectionId: string) =>
     request<Figure[]>(`/api/sections/${sectionId}/figures`),
+  uploadSectionImage: (sectionId: string, file: File | Blob) => {
+    const form = new FormData();
+    form.append('file', file, file instanceof File ? file.name : 'pasted.png');
+    return request<Figure>(`/api/sections/${sectionId}/images`, { method: 'POST', body: form });
+  },
 
   getNotes: (sectionId: string) => request<NoteBlock[]>(`/api/sections/${sectionId}/notes`),
   createNote: (

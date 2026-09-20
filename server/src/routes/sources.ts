@@ -266,6 +266,14 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const source = db.select().from(schema.sources).where(eq(schema.sources.id, id)).get();
     if (!source) return reply.code(404).send({ error: 'Source not found' });
+    if (source.type === 'pasted') {
+      return reply.code(400).send({
+        error:
+          'This holds images added directly to your notes, not a document to parse. Delete a ' +
+          'specific one from wherever it appears in your notes, or delete this whole source to ' +
+          'remove all of them.',
+      });
+    }
 
     reply.code(202);
     return startIngest(id);
@@ -414,6 +422,119 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // --- Figures --------------------------------------------------------------
+
+  const PASTED_IMAGE_EXTENSIONS: Record<string, string> = {
+    'image/png': '.png',
+    'image/jpeg': '.jpg',
+    'image/gif': '.gif',
+    'image/webp': '.webp',
+  };
+
+  /**
+   * A student's own image — a phone photo of a whiteboard, a pasted
+   * screenshot — dropped straight into a section's notes, with no detour
+   * through the source-ingestion pipeline.
+   *
+   * It still becomes an ordinary row in `figures`, because everything that
+   * already works for an extracted figure — /media serving, the figure
+   * picker, deletion cascading with its source — should keep working for
+   * this one too rather than growing a second, parallel image system. The
+   * one piece invented here is a lightweight "pasted" source, one per
+   * section, that these figures attach to instead of a real upload.
+   */
+  app.post('/api/sections/:id/images', async (request, reply) => {
+    const { id: sectionId } = z.object({ id: z.string() }).parse(request.params);
+    const section = db
+      .select()
+      .from(schema.sections)
+      .where(eq(schema.sections.id, sectionId))
+      .get();
+    if (!section) return reply.code(404).send({ error: 'Section not found' });
+
+    let pastedSourceId = db
+      .select({ sourceId: schema.sourceSections.sourceId })
+      .from(schema.sourceSections)
+      .innerJoin(schema.sources, eq(schema.sources.id, schema.sourceSections.sourceId))
+      .where(
+        and(eq(schema.sourceSections.sectionId, sectionId), eq(schema.sources.type, 'pasted')),
+      )
+      .get()?.sourceId;
+
+    if (!pastedSourceId) {
+      pastedSourceId = newId();
+      const createdId = pastedSourceId;
+      db.transaction((tx) => {
+        tx.insert(schema.sources)
+          .values({
+            id: createdId,
+            moduleId: section.moduleId,
+            type: 'pasted',
+            title: 'Pasted images',
+            filename: 'Pasted images',
+            // No single original file exists for this source, so this points
+            // at nothing on disk. Deleting the source removes it with
+            // force: true, which is a no-op on a path that was never there;
+            // the real images live in figures/<sourceId>/ below, and that
+            // whole folder is what the delete route actually cleans up.
+            path: storedPath('media', 'figures', createdId, '.pasted'),
+            status: 'ingested',
+          })
+          .run();
+        tx.insert(schema.sourceSections)
+          .values({ sourceId: createdId, sectionId, confirmed: true })
+          .run();
+      });
+    }
+
+    const figureId = newId();
+    let written: string | null = null;
+    let extension: string | null = null;
+    let rejection: { code: number; error: string } | null = null;
+
+    try {
+      for await (const part of request.parts()) {
+        if (part.type !== 'file') continue;
+        if (written || rejection) {
+          await part.toBuffer().catch(() => undefined);
+          continue;
+        }
+
+        extension = PASTED_IMAGE_EXTENSIONS[part.mimetype] ?? null;
+        if (!extension) {
+          rejection = {
+            code: 400,
+            error: `Unsupported image type "${part.mimetype}". Use PNG, JPEG, GIF or WebP.`,
+          };
+          await part.toBuffer().catch(() => undefined);
+          continue;
+        }
+
+        const relativePath = storedPath('media', 'figures', pastedSourceId, `${figureId}${extension}`);
+        const absolutePath = fromStoredPath(relativePath);
+        fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+        await pipeline(part.file, fs.createWriteStream(absolutePath));
+        if (part.file.truncated) throw new FileTooLargeError();
+        written = relativePath;
+      }
+    } catch (error) {
+      if (written) fs.rmSync(fromStoredPath(written), { force: true });
+      if (isTooLarge(error)) {
+        return reply.code(413).send({
+          error: `Image is bigger than the ${config.maxUploadMb} MB upload limit.`,
+        });
+      }
+      request.log.error(error);
+      return reply.code(500).send({ error: `Could not store the image: ${(error as Error).message}` });
+    }
+
+    if (rejection) return reply.code(rejection.code).send({ error: rejection.error });
+    if (!written) return reply.code(400).send({ error: 'Expected an image file upload' });
+
+    db.insert(schema.figures).values({ id: figureId, sourceId: pastedSourceId, path: written }).run();
+    const row = db.select().from(schema.figures).where(eq(schema.figures.id, figureId)).get();
+
+    return reply.code(201).send(publicFigure(row!));
+  });
 
   app.get('/api/sections/:id/figures', async (request) => {
     const { id } = z.object({ id: z.string() }).parse(request.params);
