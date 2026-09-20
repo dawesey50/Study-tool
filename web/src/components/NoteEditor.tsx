@@ -313,7 +313,7 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
   return (
     <div>
       <GenerateNotes sectionId={sectionId} />
-      <Toolbar editor={editor} status={status} />
+      <Toolbar editor={editor} status={status} onInsertFigure={() => setPicker('figure')} />
 
       <BubbleMenu
         editor={editor}
@@ -428,7 +428,15 @@ function useActiveBlock(editor: Editor | null, blocks: NoteBlock[]): NoteBlock |
 
 // ---------------------------------------------------------------------------
 
-function Toolbar({ editor, status }: { editor: Editor; status: string }) {
+function Toolbar({
+  editor,
+  status,
+  onInsertFigure,
+}: {
+  editor: Editor;
+  status: string;
+  onInsertFigure: () => void;
+}) {
   const blockLabel = editor.isActive('heading', { level: 1 })
     ? 'Heading 1'
     : editor.isActive('heading', { level: 2 })
@@ -507,6 +515,9 @@ function Toolbar({ editor, status }: { editor: Editor; status: string }) {
         label="Inline code"
         text="<>"
       />
+
+      <Divider />
+      <IconTool icon="image" onClick={onInsertFigure} label="Insert a figure from this section" />
 
       <Divider />
       <IconTool
