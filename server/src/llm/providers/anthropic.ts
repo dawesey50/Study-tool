@@ -5,6 +5,7 @@ import {
   LlmRefusedError,
   ProviderRequestError,
   ProviderUnavailableError,
+  describeFetchError,
   type Provider,
   type ProviderRequest,
   type ProviderResponse,
@@ -114,16 +115,22 @@ export const anthropicProvider: Provider = {
  * next provider for. A wrong key counts as unavailable rather than fatal —
  * with three providers configured, one bad key should not stop the work.
  */
-function translate(error: unknown): Error {
+export function translate(error: unknown): Error {
   if (error instanceof Anthropic.BadRequestError) {
     return new ProviderRequestError('anthropic', error.message);
   }
   if (error instanceof Anthropic.APIError) {
+    // A connection failure's own .message is always the fixed string
+    // "Connection error." — the SDK puts the actual cause (DNS, TLS,
+    // refused connection) on .cause instead, same as a bare fetch failure
+    // does for the other providers. Anthropic is the default for most
+    // tasks, so leaving this generic here specifically defeated the reason
+    // describeFetchError exists at all.
     return new ProviderUnavailableError(
       'anthropic',
-      `${error.status ?? 'network'}: ${error.message}`,
+      `${error.status ?? 'network'}: ${describeFetchError(error)}`,
       error,
     );
   }
-  return new ProviderUnavailableError('anthropic', (error as Error).message, error);
+  return new ProviderUnavailableError('anthropic', describeFetchError(error), error);
 }
