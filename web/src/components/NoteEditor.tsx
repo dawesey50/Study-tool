@@ -10,7 +10,7 @@ import TableHeader from '@tiptap/extension-table-header';
 import TableRow from '@tiptap/extension-table-row';
 import { BubbleMenu, EditorContent, useEditor, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
 import { api, type NoteBlock } from '../lib/api';
 import {
@@ -368,6 +368,8 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
 
       <BubbleMenu
         editor={editor}
+        pluginKey="textBubbleMenu"
+        shouldShow={({ editor: e, from, to }) => !e.isActive('table') && from !== to}
         tippyOptions={{ duration: 100 }}
         className="flex items-center gap-0.5 rounded-lg border border-line bg-raised p-1 shadow-overlay"
       >
@@ -392,6 +394,35 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
             H{level}
           </button>
         ))}
+      </BubbleMenu>
+
+      <BubbleMenu
+        editor={editor}
+        pluginKey="tableBubbleMenu"
+        shouldShow={({ editor: e }) => e.isActive('table')}
+        tippyOptions={{ duration: 100, placement: 'top' }}
+        className="flex items-center gap-0.5 rounded-lg border border-line bg-raised p-1 shadow-overlay"
+      >
+        <TableButton onClick={() => editor.chain().focus().addRowAfter().run()} label="Add a row below">
+          Row +
+        </TableButton>
+        <TableButton onClick={() => editor.chain().focus().deleteRow().run()} label="Delete this row">
+          Row −
+        </TableButton>
+        <span className="mx-0.5 h-4 w-px bg-line" />
+        <TableButton
+          onClick={() => editor.chain().focus().addColumnAfter().run()}
+          label="Add a column to the right"
+        >
+          Col +
+        </TableButton>
+        <TableButton onClick={() => editor.chain().focus().deleteColumn().run()} label="Delete this column">
+          Col −
+        </TableButton>
+        <span className="mx-0.5 h-4 w-px bg-line" />
+        <TableButton onClick={() => editor.chain().focus().deleteTable().run()} label="Delete this table">
+          <Icon name="trash" size={13} />
+        </TableButton>
       </BubbleMenu>
 
       {/*
@@ -767,6 +798,28 @@ function LinkButton({ editor }: { editor: Editor }) {
       }`}
     >
       <Icon name="link" size={14} />
+    </button>
+  );
+}
+
+/** The table editing menu's buttons — none of these toggle, they just act once. */
+function TableButton({
+  onClick,
+  label,
+  children,
+}: {
+  onClick: () => void;
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className="flex h-7 min-w-7 items-center justify-center rounded px-1.5 text-xs font-medium text-muted transition hover:bg-line/60 hover:text-ink"
+    >
+      {children}
     </button>
   );
 }
