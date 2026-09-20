@@ -2,6 +2,7 @@ import { config } from '../../config.js';
 import {
   ProviderRequestError,
   ProviderUnavailableError,
+  describeFetchError,
   type Provider,
   type ProviderRequest,
   type ProviderResponse,
@@ -109,7 +110,7 @@ export const geminiProvider: Provider = {
         signal: request.signal ?? AbortSignal.timeout(config.llm.timeoutMs),
       });
     } catch (error) {
-      throw new ProviderUnavailableError('gemini', (error as Error).message, error);
+      throw new ProviderUnavailableError('gemini', describeFetchError(error), error);
     }
 
     const payload = (await response.json().catch(() => ({}))) as GeminiResponse;

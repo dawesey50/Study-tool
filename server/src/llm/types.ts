@@ -67,6 +67,22 @@ export class ProviderUnavailableError extends Error {
   }
 }
 
+/**
+ * Node's fetch throws a bare `TypeError: fetch failed` for every network-level
+ * failure — DNS, refused connection, TLS, timeout — and hides the actual
+ * reason on `.cause`. Left alone, that means the skip reason a student sees
+ * says only "fetch failed", which is not a thing anyone can act on. This pulls
+ * the cause's error code and message back onto the surface.
+ */
+export function describeFetchError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const cause = error instanceof Error ? (error as Error & { cause?: unknown }).cause : undefined;
+  if (!cause) return message;
+  const causeCode = (cause as { code?: string }).code;
+  const causeMessage = cause instanceof Error ? cause.message : String(cause);
+  return `${message}: ${causeCode ? `${causeCode} ` : ''}${causeMessage}`;
+}
+
 /** The request itself was wrong. Failing over would hide the bug. */
 export class ProviderRequestError extends Error {
   constructor(

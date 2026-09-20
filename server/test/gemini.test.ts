@@ -195,6 +195,29 @@ test('a rate limit is still worth failing over', async () => {
   );
 });
 
+test('a bare network failure reports its actual cause, not just "fetch failed"', async () => {
+  // Node's fetch throws `TypeError: fetch failed` for every DNS/connection/TLS
+  // failure and puts the real reason on `.cause` — exactly what a user hit
+  // live, where the skip reason in the UI said only "groq (fetch failed)"
+  // with nothing to act on.
+  const cause = Object.assign(new Error('getaddrinfo ENOTFOUND generativelanguage.googleapis.com'), {
+    code: 'ENOTFOUND',
+  });
+  globalThis.fetch = (async () => {
+    throw Object.assign(new TypeError('fetch failed'), { cause });
+  }) as typeof fetch;
+
+  await assert.rejects(
+    () => geminiProvider.complete({ model: 'gemini-2.5-flash', prompt: 'x', maxTokens: 100 }),
+    (error: Error) => {
+      assert.equal(error.name, 'ProviderUnavailableError');
+      assert.match(error.message, /ENOTFOUND/);
+      assert.match(error.message, /generativelanguage\.googleapis\.com/);
+      return true;
+    },
+  );
+});
+
 test('images and a system prompt are still assembled correctly', async () => {
   mockResponse = {
     status: 200,
