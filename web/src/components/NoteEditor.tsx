@@ -4,6 +4,7 @@ import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
 import Subscript from '@tiptap/extension-subscript';
 import Superscript from '@tiptap/extension-superscript';
+import Underline from '@tiptap/extension-underline';
 import Table from '@tiptap/extension-table';
 import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
@@ -15,7 +16,7 @@ import { BubbleMenu, EditorContent, useEditor, type Editor } from '@tiptap/react
 import StarterKit from '@tiptap/starter-kit';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
-import { api, type NoteBlock } from '../lib/api';
+import { api, type NoteBlock, type NoteBlockType } from '../lib/api';
 import {
   blocksToDoc,
   docToBlocks,
@@ -78,8 +79,16 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
    * The second one then fails outright: a duplicate key, on a block that was
    * never actually a duplicate, just double-submitted.
    */
-  const saving = useRef(false);
-  const rerunAfterSave = useRef(false);
+  /**
+   * Keyed by section rather than a single flag: this component doesn't
+   * remount when sectionId changes (only the editor instance underneath it
+   * does), so a save still in flight for the section just navigated away
+   * from must never gate or trigger a rerun for the one navigated to.
+   */
+  const saving = useRef<Set<string>>(new Set());
+  const rerunAfterSave = useRef<Set<string>>(new Set());
+  /** True between an edit and its save actually landing — see the reload effect below. */
+  const dirty = useRef(false);
   /**
    * Read from inside handlePaste/handleDrop, which are captured once into the
    * options object below and not reliably refreshed on every render — a ref
@@ -131,6 +140,7 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
         TableHeader,
         TableCell,
         Highlight,
+        Underline,
         Link.configure({ openOnClick: false, autolink: true }),
         Subscript,
         Superscript,
@@ -167,6 +177,7 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
         },
       },
       onUpdate: () => {
+        dirty.current = true;
         scheduleSave();
         forceRender((n) => n + 1);
       },
@@ -191,23 +202,36 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
   }, [findOpen]);
 
   /**
-   * Load this section's blocks into the document exactly once.
+   * Load this section's blocks into the document, and keep serverBlocks
+   * current whether or not the document itself gets reloaded.
    *
-   * The guard is doing real work. Saving writes the fresh server state back
-   * into the query cache, which makes `blocks` a new value and re-runs this
-   * effect — and reloading the content there would reset the document under a
-   * cursor that is still typing. Only a change of section should reload.
+   * Those used to be the same guard: skip both once a section had loaded
+   * once, because reloading the document under a cursor that is still
+   * typing is real damage. But that meant serverBlocks froze the moment
+   * anything outside a plain edit changed the section's notes — generating
+   * notes, accepting a restore point — and save() diffs against serverBlocks
+   * to decide what's new. Frozen-stale, it kept reporting an already-saved
+   * block as new on every later save, which failed on a duplicate key every
+   * single time from then on, because the ref that would have stopped that
+   * could never update again for that section.
    *
-   * There is deliberately no separate effect resetting the marker on section
-   * change: effects run in declaration order, so one would fire *after* this on
-   * mount and re-arm the reload for every subsequent save.
+   * serverBlocks now always updates. Only the visible document is guarded,
+   * and only by two things that actually justify skipping a resync: local
+   * edits still unsaved (dirty), or the server not actually having changed
+   * (comparing against what a moment ago meant "reload once" now means
+   * "reload only when there is a real reason to").
    */
   useEffect(() => {
     if (!editor || !blocks) return;
-    if (loadedSection.current === sectionId) return;
 
+    const previous = serverBlocks.current;
     serverBlocks.current = blocks;
     lockedIds.current = new Set(blocks.filter((block) => block.locked).map((block) => block.id));
+
+    const alreadyLoaded = loadedSection.current === sectionId;
+    const serverChanged = JSON.stringify(previous) !== JSON.stringify(blocks);
+    if (alreadyLoaded && (dirty.current || !serverChanged)) return;
+
     editor.commands.setContent(
       blocksToDoc(
         blocks.map((block) => ({
@@ -220,6 +244,7 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
       false,
     );
     loadedSection.current = sectionId;
+    dirty.current = false;
     setStatus('idle');
   }, [editor, blocks, sectionId]);
 
@@ -268,7 +293,11 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
   );
 
   const saveOnce = useCallback(async () => {
-    if (!editor) return;
+    // A save queued while switching sections can still fire after this
+    // editor's own instance was torn down (a new one exists for whatever
+    // section is now open) — operating on it then means diffing against
+    // content that no longer reflects anything real.
+    if (!editor || editor.isDestroyed) return;
     const desired = docToBlocks(editor.getJSON() as PmNode);
     const current = serverBlocks.current;
 
@@ -296,6 +325,7 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
       desired.some((block, index) => block.blockId !== current[index]?.id);
 
     if (!removed.length && !created.length && !changed.length && !orderChanged) {
+      dirty.current = false;
       setStatus('saved');
       return;
     }
@@ -335,33 +365,52 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
       lockedIds.current = new Set(fresh.filter((block) => block.locked).map((block) => block.id));
       queryClient.setQueryData(['notes', sectionId], fresh);
       queryClient.invalidateQueries({ queryKey: ['sections'] });
+      dirty.current = false;
       setStatus('saved');
     } catch (error) {
       setStatus('error');
       toast.error('Could not save your notes', (error as Error).message);
+
+      // Whatever did succeed before this failure is now real on the server,
+      // and serverBlocks needs to know it — otherwise every later save keeps
+      // re-submitting the same already-created block and fails on the same
+      // duplicate key forever, because nothing here ever moves it forward.
+      try {
+        const fresh = await api.getNotes(sectionId);
+        serverBlocks.current = fresh;
+        lockedIds.current = new Set(fresh.filter((block) => block.locked).map((block) => block.id));
+        queryClient.setQueryData(['notes', sectionId], fresh);
+      } catch {
+        // Best effort. The next successful fetch of this section heals it.
+      }
     }
   }, [editor, sectionId, queryClient, toast]);
 
   const save = useCallback(async () => {
-    if (saving.current) {
+    // Captured now, from this closure's own sectionId — not read again
+    // later, since by the time this call resolves the component's current
+    // section may already be a different one.
+    const forSection = sectionId;
+
+    if (saving.current.has(forSection)) {
       // A save is already in flight against the state this call would have
       // used. Rerunning once it finishes picks up everything, including
       // whatever changed during the wait, without two requests racing to
       // create the same new block under the same id.
-      rerunAfterSave.current = true;
+      rerunAfterSave.current.add(forSection);
       return;
     }
-    saving.current = true;
+    saving.current.add(forSection);
     try {
       await saveOnce();
     } finally {
-      saving.current = false;
-      if (rerunAfterSave.current) {
-        rerunAfterSave.current = false;
+      saving.current.delete(forSection);
+      if (rerunAfterSave.current.has(forSection)) {
+        rerunAfterSave.current.delete(forSection);
         void save();
       }
     }
-  }, [saveOnce]);
+  }, [saveOnce, sectionId]);
 
   const scheduleSave = useCallback(() => {
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
@@ -476,6 +525,7 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
       >
         <MarkButton editor={editor} mark="bold" label="Bold" text="B" />
         <MarkButton editor={editor} mark="italic" label="Italic" text="I" />
+        <MarkButton editor={editor} mark="underline" label="Underline" text="U" />
         <MarkButton editor={editor} mark="code" label="Code" text="<>" />
         <span className="mx-0.5 h-4 w-px bg-line" />
         <MarkButton editor={editor} mark="highlight" icon="highlight" label="Highlight" text="" />
@@ -637,14 +687,60 @@ const ORIGIN_LABEL: Record<NoteBlock['origin'], string> = {
   user_edited: 'yours · edited',
 };
 
+/** The minimal shape read off a ProseMirror node — real or a NodeSelection's — to find its block id. */
+interface PmSelectionNode {
+  attrs?: Record<string, unknown>;
+  type?: { name?: string };
+}
+
 /** Which stored block the cursor is currently sitting in. */
 function useActiveBlock(editor: Editor | null, blocks: NoteBlock[]): NoteBlock | null {
   if (!editor) return null;
-  const { $from } = editor.state.selection;
-  const top = $from.depth === 0 ? $from.nodeAfter : $from.node(1);
+  const { selection } = editor.state;
+
+  // Clicking a figure (or any node-view block) selects that node directly
+  // rather than placing a cursor inside it — a NodeSelection, not a
+  // TextSelection — and $from on one of those resolves to the position just
+  // *before* the node, whose own attrs are never checked below. Without this,
+  // the figure you just clicked reads as no active block at all: not locked,
+  // not lockable, not movable, because nothing here recognised it as one.
+  const selectedNode = (selection as { node?: PmSelectionNode }).node;
+  const top: PmSelectionNode | null =
+    selectedNode ??
+    (() => {
+      const { $from } = selection;
+      return ($from.depth === 0 ? $from.nodeAfter : $from.node(1)) ?? null;
+    })();
+
   const id = top?.attrs?.blockId as string | undefined;
   if (!id) return null;
-  return blocks.find((block) => block.id === id) ?? null;
+
+  const known = blocks.find((block) => block.id === id);
+  if (known) return known;
+
+  // The block genuinely exists — it's right here in the document, and its id
+  // is real (BlockId's own plugin minted it) — it just hasn't survived a
+  // round trip to the server yet, because the debounced autosave hasn't
+  // fired. Reporting it as "no active block" until then meant a figure you
+  // had just inserted, or a line you had just typed, could not be locked or
+  // moved for however long that debounce takes: not broken exactly, just
+  // unusable for the one moment a person is most likely to try.
+  return {
+    id,
+    sectionId: '',
+    position: -1,
+    type: (top?.type?.name === 'figure' ? 'figure' : 'prose') as NoteBlockType,
+    markdown: '',
+    figureId: (top?.attrs?.figureId as string | null) ?? null,
+    targetSectionId: (top?.attrs?.targetSectionId as string | null) ?? null,
+    conceptIds: null,
+    sourceRefs: null,
+    origin: 'user_written',
+    locked: false,
+    generatedAt: null,
+    updatedAt: 0,
+    embedded: false,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1021,7 +1117,7 @@ function MarkButton({
   icon,
 }: {
   editor: Editor;
-  mark: 'bold' | 'italic' | 'code' | 'highlight' | 'subscript' | 'superscript';
+  mark: 'bold' | 'italic' | 'underline' | 'code' | 'highlight' | 'subscript' | 'superscript';
   icon?: IconName;
   label: string;
   text: string;
@@ -1032,6 +1128,7 @@ function MarkButton({
         const chain = editor.chain().focus();
         if (mark === 'bold') chain.toggleBold().run();
         else if (mark === 'italic') chain.toggleItalic().run();
+        else if (mark === 'underline') chain.toggleUnderline().run();
         else if (mark === 'code') chain.toggleCode().run();
         else if (mark === 'highlight') chain.toggleHighlight().run();
         else if (mark === 'subscript') chain.toggleSubscript().run();

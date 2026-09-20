@@ -325,6 +325,12 @@ test('a highlighted phrase keeps its == delimiters', () => {
   assert.equal(result?.markdown, markdown);
 });
 
+test('an underlined phrase keeps its __ delimiters, distinct from bold', () => {
+  const markdown = 'Remember the __key exception__ to this rule.';
+  const [result] = roundTrip([block('prose', markdown)]);
+  assert.equal(result?.markdown, markdown);
+});
+
 test('a link keeps both its label and its href', () => {
   const markdown = 'See [the BNF entry](https://bnf.nice.org.uk/drugs/insulin) for dosing.';
   const [result] = roundTrip([block('prose', markdown)]);

@@ -108,17 +108,38 @@ function FigureView({ node }: { node: { attrs: Record<string, unknown> } }) {
   return (
     <NodeViewWrapper
       as="figure"
+      draggable
       data-src={src}
       data-block-id={blockId}
-      className="my-4 overflow-hidden rounded-xl border border-line bg-panel"
+      className="my-4 cursor-grab overflow-hidden rounded-xl border border-line bg-panel active:cursor-grabbing"
     >
-      {src ? (
-        <img src={src} alt={alt} className="mx-auto block max-h-96 w-auto max-w-full" />
-      ) : (
-        <div className="flex h-24 items-center justify-center text-xs text-faint">
-          This figure has no image
-        </div>
-      )}
+      {/*
+        contentEditable={false}: without it, a click here has nowhere real to
+        place a text cursor — this isn't the node's actual editable content,
+        the caption below is — and ProseMirror ends up unable to resolve the
+        click to any coherent position in the document at all. Marking it
+        exactly as read-only as it actually is is what lets ProseMirror fall
+        back to selecting the whole node instead, which is what makes the
+        figure recognisable afterwards as the active block: lockable, and
+        movable with the same buttons as any other block.
+      */}
+      <div contentEditable={false}>
+        {src ? (
+          // The browser makes every <img> natively draggable; left alone, dragging one
+          // starts a browser image-drag instead of moving the figure block within the
+          // document, and the two compete for the same gesture.
+          <img
+            src={src}
+            alt={alt}
+            draggable={false}
+            className="mx-auto block max-h-96 w-auto max-w-full"
+          />
+        ) : (
+          <div className="flex h-24 items-center justify-center text-xs text-faint">
+            This figure has no image
+          </div>
+        )}
+      </div>
       <NodeViewContent
         as="figcaption"
         className="border-t border-line px-3 py-2 text-xs leading-relaxed text-muted"
@@ -206,9 +227,10 @@ function CrossrefView({ node }: { node: { attrs: Record<string, unknown> } }) {
   return (
     <NodeViewWrapper
       as="aside"
+      draggable
       data-crossref={targetId ?? ''}
       data-block-id={node.attrs.blockId ? String(node.attrs.blockId) : undefined}
-      className="my-3 rounded-xl border border-accent/30 bg-accent-soft/50 px-3 py-2"
+      className="my-3 cursor-grab rounded-xl border border-accent/30 bg-accent-soft/50 px-3 py-2 active:cursor-grabbing"
     >
       <div className="flex items-baseline gap-2 text-xs" contentEditable={false}>
         <Icon name="chevronRight" size={13} className="translate-y-0.5 text-accent" />

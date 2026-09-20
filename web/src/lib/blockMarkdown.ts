@@ -228,6 +228,7 @@ function inlineToMarkdown(content: PmNode[] | undefined): string {
       if (marks.has('code')) text = `\`${text}\``;
       if (marks.has('bold')) text = `**${text}**`;
       if (marks.has('italic')) text = `*${text}*`;
+      if (marks.has('underline')) text = `__${text}__`;
       if (marks.has('strike')) text = `~~${text}~~`;
       if (marks.has('highlight')) text = `==${text}==`;
       if (marks.has('subscript')) text = `~${text}~`;
@@ -486,7 +487,7 @@ export function parseInline(text: string): PmNode[] {
   // engine tries alternatives left to right at each position, so the longer
   // one has to be offered first or it is never reached.
   const pattern =
-    /(\$[^$\n]+\$|`[^`]+`|\*\*[^*]+\*\*|~~[^~]+~~|==[^=]+==|\[[^\]]+\]\([^)]+\)|\^[^^]+\^|~[^~]+~|\*[^*]+\*)/g;
+    /(\$[^$\n]+\$|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|~~[^~]+~~|==[^=]+==|\[[^\]]+\]\([^)]+\)|\^[^^]+\^|~[^~]+~|\*[^*]+\*)/g;
   const nodes: PmNode[] = [];
   let cursor = 0;
 
@@ -501,6 +502,8 @@ export function parseInline(text: string): PmNode[] {
       nodes.push({ type: 'text', text: token.slice(1, -1), marks: [{ type: 'code' }] });
     } else if (token.startsWith('**')) {
       nodes.push({ type: 'text', text: token.slice(2, -2), marks: [{ type: 'bold' }] });
+    } else if (token.startsWith('__')) {
+      nodes.push({ type: 'text', text: token.slice(2, -2), marks: [{ type: 'underline' }] });
     } else if (token.startsWith('~~')) {
       nodes.push({ type: 'text', text: token.slice(2, -2), marks: [{ type: 'strike' }] });
     } else if (token.startsWith('==')) {
