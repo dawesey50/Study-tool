@@ -321,7 +321,12 @@
 }
 
 @media print {
-  aside,
+  /*
+   * .no-print only, not a bare `aside` selector — a cross-reference block in
+   * the notes themselves renders as an <aside> (nodes.tsx's CrossrefView),
+   * and a tag-name rule here silently deleted every one of them from the
+   * exported page with nothing to say they were ever there.
+   */
   .no-print {
     display: none !important;
   }

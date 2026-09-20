@@ -510,11 +510,21 @@ export function parseInline(text: string): PmNode[] {
       nodes.push({ type: 'text', text: token.slice(2, -2), marks: [{ type: 'highlight' }] });
     } else if (token.startsWith('[')) {
       const parts = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(token);
-      nodes.push({
-        type: 'text',
-        text: parts?.[1] ?? token,
-        marks: [{ type: 'link', attrs: { href: parts?.[2] ?? '' } }],
-      });
+      const href = parts?.[2] ?? '';
+      // The label can itself carry other formatting — [**bold text**](url) —
+      // and parsing it as one flat run threw that away: **, on reload, ended
+      // up sitting in the link's text as literal asterisks instead of being
+      // read back as bold. Parsing the label the same way the rest of this
+      // function parses everything else, then adding the link mark to
+      // whatever marks each resulting run already has, is what a link
+      // wrapping already-formatted text actually needs.
+      for (const inner of parseInline(parts?.[1] ?? token)) {
+        if (inner.type !== 'text') {
+          nodes.push(inner);
+          continue;
+        }
+        nodes.push({ ...inner, marks: [...(inner.marks ?? []), { type: 'link', attrs: { href } }] });
+      }
     } else if (token.startsWith('^')) {
       nodes.push({ type: 'text', text: token.slice(1, -1), marks: [{ type: 'superscript' }] });
     } else if (token.startsWith('~')) {

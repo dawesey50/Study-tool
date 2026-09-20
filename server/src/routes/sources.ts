@@ -488,6 +488,7 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
 
     const figureId = newId();
     let written: string | null = null;
+    let writtenPath: string | null = null;
     let extension: string | null = null;
     let rejection: { code: number; error: string } | null = null;
 
@@ -512,11 +513,22 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
         const relativePath = storedPath('media', 'figures', pastedSourceId, `${figureId}${extension}`);
         const absolutePath = fromStoredPath(relativePath);
         fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+        writtenPath = absolutePath;
         await pipeline(part.file, fs.createWriteStream(absolutePath));
+
+        // Belt and braces: multipart normally throws on an oversized file
+        // before this is reached, but it can be configured not to. This has
+        // to be checked, and the file cleaned up, before `written` is set —
+        // that's the flag the catch block below uses to know there's
+        // something on disk worth removing.
         if (part.file.truncated) throw new FileTooLargeError();
         written = relativePath;
+        writtenPath = null;
       }
     } catch (error) {
+      // Half a file on disk is worse than none: it isn't referenced by any
+      // figures row, so nothing would ever find or clean it up again.
+      if (writtenPath) fs.rmSync(writtenPath, { force: true });
       if (written) fs.rmSync(fromStoredPath(written), { force: true });
       if (isTooLarge(error)) {
         return reply.code(413).send({

@@ -48,7 +48,7 @@ export function App() {
   return (
     <div className="flex h-full">
       <aside
-        className={`flex shrink-0 flex-col border-r border-line bg-panel transition-[width] duration-200 ${
+        className={`no-print flex shrink-0 flex-col border-r border-line bg-panel transition-[width] duration-200 ${
           collapsed ? 'w-14' : 'w-72'
         }`}
       >

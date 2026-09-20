@@ -12,6 +12,7 @@ import { test } from 'node:test';
 import {
   blocksToDoc,
   docToBlocks,
+  parseInline,
   type BlockType,
   type StoredBlock,
 } from '../src/lib/blockMarkdown.js';
@@ -335,6 +336,22 @@ test('a link keeps both its label and its href', () => {
   const markdown = 'See [the BNF entry](https://bnf.nice.org.uk/drugs/insulin) for dosing.';
   const [result] = roundTrip([block('prose', markdown)]);
   assert.equal(result?.markdown, markdown);
+});
+
+test('a bold link label parses with both marks, not literal asterisks in the text', () => {
+  // Selecting already-bold text and adding a link to it produces
+  // [**text**](url). The markdown string alone can't tell this apart from a
+  // link whose label is literally the four characters "**text**" — both
+  // serialise back to the same source — so this checks the parsed node
+  // directly: a flat parse of the label used to leave the run with only a
+  // link mark, the asterisks kept as literal text characters instead of
+  // being read back as bold.
+  const [node] = parseInline('[**the BNF entry**](https://bnf.nice.org.uk/drugs/insulin)');
+  assert.equal(node?.text, 'the BNF entry');
+  const markTypes = (node?.marks ?? []).map((mark) => mark.type).sort();
+  assert.deepEqual(markTypes, ['bold', 'link']);
+  const link = node?.marks?.find((mark) => mark.type === 'link');
+  assert.equal(link?.attrs?.href, 'https://bnf.nice.org.uk/drugs/insulin');
 });
 
 test('subscript survives on real biomedical notation', () => {
