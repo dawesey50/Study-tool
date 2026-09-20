@@ -183,6 +183,7 @@ const LLM_HOSTS = [
   { host: 'api.anthropic.com', name: 'Anthropic' },
   { host: 'generativelanguage.googleapis.com', name: 'Gemini' },
   { host: 'api.groq.com', name: 'Groq' },
+  { host: 'api.mistral.ai', name: 'Mistral' },
 ];
 
 // Issuer names left behind by common software that intercepts HTTPS traffic

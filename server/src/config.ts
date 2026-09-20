@@ -191,16 +191,24 @@ export const config = {
       anthropic: str('LLM_FALLBACK_MODEL_ANTHROPIC', 'claude-haiku-4-5'),
       gemini: str('LLM_FALLBACK_MODEL_GEMINI', 'gemini-3.6-flash'),
       groq: str('LLM_FALLBACK_MODEL_GROQ', 'llama-3.3-70b-versatile'),
+      mistral: str('LLM_FALLBACK_MODEL_MISTRAL', 'mistral-small-latest'),
     },
 
     keys: {
       anthropic: str('ANTHROPIC_API_KEY', ''),
       gemini: str('GEMINI_API_KEY', ''),
       groq: str('GROQ_API_KEY', ''),
+      mistral: str('MISTRAL_API_KEY', ''),
     },
 
     /** Forces every task onto one provider. 'stub' answers offline, for tests. */
-    forceProvider: str('LLM_PROVIDER', '') as '' | 'anthropic' | 'gemini' | 'groq' | 'stub',
+    forceProvider: str('LLM_PROVIDER', '') as
+      | ''
+      | 'anthropic'
+      | 'gemini'
+      | 'groq'
+      | 'mistral'
+      | 'stub',
 
     /**
      * The three brakes. Accounting says what was spent; these stop it being

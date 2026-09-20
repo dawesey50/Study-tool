@@ -29,6 +29,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   anthropic: 'Claude',
   gemini: 'Gemini',
   groq: 'Groq',
+  mistral: 'Mistral',
   stub: 'Offline stub',
 };
 

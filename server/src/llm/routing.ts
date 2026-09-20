@@ -2,6 +2,7 @@ import { config } from '../config.js';
 import { anthropicProvider } from './providers/anthropic.js';
 import { geminiProvider } from './providers/gemini.js';
 import { groqProvider } from './providers/groq.js';
+import { mistralProvider } from './providers/mistral.js';
 import { stubProvider } from './providers/stub.js';
 import type { LlmTask, Provider } from './types.js';
 
@@ -17,11 +18,17 @@ export const PROVIDERS: Record<string, Provider> = {
   anthropic: anthropicProvider,
   gemini: geminiProvider,
   groq: groqProvider,
+  mistral: mistralProvider,
   stub: stubProvider,
 };
 
-/** Descending preference, as §3 states it: Claude, then Gemini, then Groq. */
-const FALLBACK_ORDER = ['anthropic', 'gemini', 'groq'] as const;
+/**
+ * Descending preference, as §3 states it: Claude, then Gemini, then Groq.
+ * Mistral is a later addition — a fifth-ranked, free-tier safety net for the
+ * case, rare on its own but not rare enough, where Gemini and Groq are both
+ * unavailable at once.
+ */
+const FALLBACK_ORDER = ['anthropic', 'gemini', 'groq', 'mistral'] as const;
 
 const TASK_MODELS: Record<LlmTask, () => string> = {
   hierarchy_proposal: () => config.llm.models.hierarchyProposal,
@@ -55,6 +62,7 @@ export function modelForTask(task: LlmTask): string {
 export function providerForModel(model: string): string {
   if (model.startsWith('claude-')) return 'anthropic';
   if (model.startsWith('gemini-')) return 'gemini';
+  if (model.startsWith('mistral-')) return 'mistral';
   if (model.startsWith('stub')) return 'stub';
   return 'groq';
 }
