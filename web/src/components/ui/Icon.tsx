@@ -34,7 +34,9 @@ export type IconName =
   | 'notes'
   | 'question'
   | 'edit'
-  | 'sparkle';
+  | 'sparkle'
+  | 'highlight'
+  | 'link';
 
 const PATHS: Record<IconName, string> = {
   search: 'M11 19a8 8 0 1 1 0-16 8 8 0 0 1 0 16Zm10 2-4.35-4.35',
@@ -67,6 +69,8 @@ const PATHS: Record<IconName, string> = {
     'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3 M12 17h.01',
   edit: 'M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5 M18.4 2.6a2 2 0 0 1 2.8 2.8L12 14.6l-4 1 1-4 9.4-9Z',
   sparkle: 'M12 3v4M12 17v4M3 12h4M17 12h4 M6.3 6.3 9 9M15 15l2.7 2.7M17.7 6.3 15 9M9 15l-2.7 2.7',
+  highlight: 'm9 11-6 6v3h9l3-3 M22 12l-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4',
+  link: 'M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71 M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71',
 };
 
 export interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'name'> {

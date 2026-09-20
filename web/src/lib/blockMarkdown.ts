@@ -221,13 +221,20 @@ function inlineToMarkdown(content: PmNode[] | undefined): string {
       if (node.type !== 'text' || !node.text) return '';
 
       let text = node.text;
-      const marks = new Set((node.marks ?? []).map((mark) => mark.type));
+      const nodeMarks = node.marks ?? [];
+      const marks = new Set(nodeMarks.map((mark) => mark.type));
       // Code first: its content is literal, so wrapping it last would let the
       // other markers end up inside the backticks.
       if (marks.has('code')) text = `\`${text}\``;
       if (marks.has('bold')) text = `**${text}**`;
       if (marks.has('italic')) text = `*${text}*`;
       if (marks.has('strike')) text = `~~${text}~~`;
+      if (marks.has('highlight')) text = `==${text}==`;
+      if (marks.has('subscript')) text = `~${text}~`;
+      if (marks.has('superscript')) text = `^${text}^`;
+      // Link last, so it wraps whatever other formatting the same run has.
+      const link = nodeMarks.find((mark) => mark.type === 'link');
+      if (link) text = `[${text}](${String(link.attrs?.href ?? '')})`;
       return text;
     })
     .join('');
@@ -465,15 +472,21 @@ function parseList(lines: string[], depth: number, attrs: Record<string, unknown
 
 /**
  * Inline markdown to text nodes with marks. Deliberately a small subset —
- * bold, italic, strike and code — matching exactly what the editor can produce,
- * so nothing is lost in one direction and invented in the other.
+ * bold, italic, strike, code, highlight, a link, subscript and superscript —
+ * matching exactly what the editor can produce, so nothing is lost in one
+ * direction and invented in the other.
  */
 export function parseInline(text: string): PmNode[] {
   if (!text) return [];
 
   // Maths comes first in the alternation so a $...$ containing an asterisk is
-  // not shredded into emphasis before it is recognised as an equation.
-  const pattern = /(\$[^$\n]+\$|`[^`]+`|\*\*[^*]+\*\*|~~[^~]+~~|\*[^*]+\*)/g;
+  // not shredded into emphasis before it is recognised as an equation. Every
+  // two-character delimiter is listed before the single-character one that
+  // shares its symbol (** before *, ~~ before ~), for the same reason: the
+  // engine tries alternatives left to right at each position, so the longer
+  // one has to be offered first or it is never reached.
+  const pattern =
+    /(\$[^$\n]+\$|`[^`]+`|\*\*[^*]+\*\*|~~[^~]+~~|==[^=]+==|\[[^\]]+\]\([^)]+\)|\^[^^]+\^|~[^~]+~|\*[^*]+\*)/g;
   const nodes: PmNode[] = [];
   let cursor = 0;
 
@@ -490,6 +503,19 @@ export function parseInline(text: string): PmNode[] {
       nodes.push({ type: 'text', text: token.slice(2, -2), marks: [{ type: 'bold' }] });
     } else if (token.startsWith('~~')) {
       nodes.push({ type: 'text', text: token.slice(2, -2), marks: [{ type: 'strike' }] });
+    } else if (token.startsWith('==')) {
+      nodes.push({ type: 'text', text: token.slice(2, -2), marks: [{ type: 'highlight' }] });
+    } else if (token.startsWith('[')) {
+      const parts = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(token);
+      nodes.push({
+        type: 'text',
+        text: parts?.[1] ?? token,
+        marks: [{ type: 'link', attrs: { href: parts?.[2] ?? '' } }],
+      });
+    } else if (token.startsWith('^')) {
+      nodes.push({ type: 'text', text: token.slice(1, -1), marks: [{ type: 'superscript' }] });
+    } else if (token.startsWith('~')) {
+      nodes.push({ type: 'text', text: token.slice(1, -1), marks: [{ type: 'subscript' }] });
     } else {
       nodes.push({ type: 'text', text: token.slice(1, -1), marks: [{ type: 'italic' }] });
     }

@@ -314,3 +314,45 @@ test('a mermaid diagram round-trips as a fenced block', () => {
   assert.equal(result?.type, 'diagram');
   assert.equal(result?.markdown, markdown);
 });
+
+// ---------------------------------------------------------------------------
+// Highlight, link, subscript and superscript
+// ---------------------------------------------------------------------------
+
+test('a highlighted phrase keeps its == delimiters', () => {
+  const markdown = 'This is the ==key mechanism== to remember.';
+  const [result] = roundTrip([block('prose', markdown)]);
+  assert.equal(result?.markdown, markdown);
+});
+
+test('a link keeps both its label and its href', () => {
+  const markdown = 'See [the BNF entry](https://bnf.nice.org.uk/drugs/insulin) for dosing.';
+  const [result] = roundTrip([block('prose', markdown)]);
+  assert.equal(result?.markdown, markdown);
+});
+
+test('subscript survives on real biomedical notation', () => {
+  const markdown = 'The Na~+~/K~+~-ATPase pump maintains the gradient.';
+  const [result] = roundTrip([block('prose', markdown)]);
+  assert.equal(result?.markdown, markdown);
+});
+
+test('superscript survives alongside subscript in the same line', () => {
+  const markdown = 'Ca^2+^ influx follows the Na~+~ gradient.';
+  const [result] = roundTrip([block('prose', markdown)]);
+  assert.equal(result?.markdown, markdown);
+});
+
+test('a strikethrough run is not misread as two subscript runs', () => {
+  // ~~text~~ (strike) must win over ~text~ (subscript) at the same position,
+  // the same way **text** already has to win over *text* for bold vs italic.
+  const markdown = 'The old model was ~~fully understood~~ oversimplified.';
+  const [result] = roundTrip([block('prose', markdown)]);
+  assert.equal(result?.markdown, markdown);
+});
+
+test('a lone caret with no closing pair is left as plain text', () => {
+  const markdown = 'The cost is a^b to compute, not a real superscript.';
+  const [result] = roundTrip([block('prose', markdown)]);
+  assert.equal(result?.markdown, markdown);
+});

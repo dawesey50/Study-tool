@@ -1,5 +1,9 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import Highlight from '@tiptap/extension-highlight';
+import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
+import Subscript from '@tiptap/extension-subscript';
+import Superscript from '@tiptap/extension-superscript';
 import Table from '@tiptap/extension-table';
 import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
@@ -110,6 +114,10 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
         TableRow,
         TableHeader,
         TableCell,
+        Highlight,
+        Link.configure({ openOnClick: false, autolink: true }),
+        Subscript,
+        Superscript,
         BlockId,
         TrailingParagraph,
         lockGuard,
@@ -351,16 +359,26 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
   return (
     <div>
       <GenerateNotes sectionId={sectionId} />
-      <Toolbar editor={editor} status={status} onInsertFigure={() => setPicker('figure')} />
+      <Toolbar
+        editor={editor}
+        status={status}
+        onInsertFigure={() => setPicker('figure')}
+        onInsertCrossref={() => setPicker('crossref')}
+      />
 
       <BubbleMenu
         editor={editor}
         tippyOptions={{ duration: 100 }}
         className="flex items-center gap-0.5 rounded-lg border border-line bg-raised p-1 shadow-overlay"
       >
-        <MarkButton editor={editor} mark="bold" icon="edit" label="Bold" text="B" />
-        <MarkButton editor={editor} mark="italic" icon="edit" label="Italic" text="I" />
-        <MarkButton editor={editor} mark="code" icon="edit" label="Code" text="<>" />
+        <MarkButton editor={editor} mark="bold" label="Bold" text="B" />
+        <MarkButton editor={editor} mark="italic" label="Italic" text="I" />
+        <MarkButton editor={editor} mark="code" label="Code" text="<>" />
+        <span className="mx-0.5 h-4 w-px bg-line" />
+        <MarkButton editor={editor} mark="highlight" icon="highlight" label="Highlight" text="" />
+        <LinkButton editor={editor} />
+        <MarkButton editor={editor} mark="subscript" label="Subscript" text="x₂" />
+        <MarkButton editor={editor} mark="superscript" label="Superscript" text="x²" />
         <span className="mx-0.5 h-4 w-px bg-line" />
         {([1, 2, 3] as const).map((level) => (
           <button
@@ -479,10 +497,12 @@ function Toolbar({
   editor,
   status,
   onInsertFigure,
+  onInsertCrossref,
 }: {
   editor: Editor;
   status: string;
   onInsertFigure: () => void;
+  onInsertCrossref: () => void;
 }) {
   const blockLabel = editor.isActive('heading', { level: 1 })
     ? 'Heading 1'
@@ -565,6 +585,11 @@ function Toolbar({
 
       <Divider />
       <IconTool icon="image" onClick={onInsertFigure} label="Insert a figure from this section" />
+      <IconTool
+        icon="chevronRight"
+        onClick={onInsertCrossref}
+        label="Point at another section, instead of repeating it"
+      />
 
       <Divider />
       <IconTool
@@ -689,10 +714,11 @@ function MarkButton({
   mark,
   label,
   text,
+  icon,
 }: {
   editor: Editor;
-  mark: 'bold' | 'italic' | 'code';
-  icon: IconName;
+  mark: 'bold' | 'italic' | 'code' | 'highlight' | 'subscript' | 'superscript';
+  icon?: IconName;
   label: string;
   text: string;
 }) {
@@ -702,15 +728,45 @@ function MarkButton({
         const chain = editor.chain().focus();
         if (mark === 'bold') chain.toggleBold().run();
         else if (mark === 'italic') chain.toggleItalic().run();
-        else chain.toggleCode().run();
+        else if (mark === 'code') chain.toggleCode().run();
+        else if (mark === 'highlight') chain.toggleHighlight().run();
+        else if (mark === 'subscript') chain.toggleSubscript().run();
+        else chain.toggleSuperscript().run();
       }}
       title={label}
       aria-label={label}
-      className={`h-7 min-w-7 rounded px-1.5 text-xs transition hover:bg-line/60 ${
+      className={`flex h-7 min-w-7 items-center justify-center rounded px-1.5 text-xs transition hover:bg-line/60 ${
         editor.isActive(mark) ? 'bg-accent-soft text-accent' : ''
       } ${mark === 'bold' ? 'font-bold' : ''} ${mark === 'italic' ? 'italic' : ''}`}
     >
-      {text}
+      {icon ? <Icon name={icon} size={14} /> : text}
+    </button>
+  );
+}
+
+/** Links need a URL, so a simple toggle button does not fit MarkButton's pattern. */
+function LinkButton({ editor }: { editor: Editor }) {
+  const active = editor.isActive('link');
+  return (
+    <button
+      onClick={() => {
+        const chain = editor.chain().focus();
+        if (active) {
+          chain.unsetLink().run();
+          return;
+        }
+        const previous = editor.getAttributes('link').href as string | undefined;
+        const url = window.prompt('Link to', previous ?? 'https://');
+        if (!url) return;
+        chain.setLink({ href: url }).run();
+      }}
+      title={active ? 'Remove link' : 'Add a link'}
+      aria-label={active ? 'Remove link' : 'Add a link'}
+      className={`flex h-7 min-w-7 items-center justify-center rounded px-1.5 transition hover:bg-line/60 ${
+        active ? 'bg-accent-soft text-accent' : ''
+      }`}
+    >
+      <Icon name="link" size={14} />
     </button>
   );
 }
