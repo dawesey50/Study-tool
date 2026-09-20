@@ -3,8 +3,9 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ConceptList } from '../components/ConceptList';
 import { NoteEditor } from '../components/NoteEditor';
-import { api, type Chunk, type Source } from '../lib/api';
+import { api, type Chunk, type Figure, type Source } from '../lib/api';
 import { Icon, type IconName } from '../components/ui/Icon';
+import { Modal } from '../components/ui/Modal';
 import { useToast } from '../components/ui/Toast';
 
 type Tab = 'notes' | 'concepts' | 'exam' | 'practice' | 'sources';
@@ -178,6 +179,7 @@ function SourcesTab({
     queryKey: ['section-figures', sectionId],
     queryFn: () => api.getSectionFigures(sectionId),
   });
+  const [openFigure, setOpenFigure] = useState<Figure | null>(null);
 
   if (!sources?.length) {
     return (
@@ -216,12 +218,18 @@ function SourcesTab({
           <div className="mt-3 grid grid-cols-3 gap-3">
             {figures.map((figure) => (
               <figure key={figure.id} className="card overflow-hidden">
-                <img
-                  src={figure.url}
-                  alt={figure.altText ?? figure.captionExtracted ?? 'Extracted figure'}
-                  className="h-32 w-full bg-canvas object-contain"
-                  loading="lazy"
-                />
+                <button
+                  type="button"
+                  onClick={() => setOpenFigure(figure)}
+                  className="block w-full cursor-zoom-in"
+                >
+                  <img
+                    src={figure.url}
+                    alt={figure.altText ?? figure.captionExtracted ?? 'Extracted figure'}
+                    className="h-32 w-full bg-canvas object-contain"
+                    loading="lazy"
+                  />
+                </button>
                 <figcaption className="border-t border-line px-2 py-1.5 text-2xs leading-snug text-muted">
                   {figure.captionExtracted ?? figure.captionAi ?? 'No caption found'}
                   {figure.pageNo ? (
@@ -233,6 +241,22 @@ function SourcesTab({
           </div>
         </section>
       )}
+
+      <Modal
+        open={openFigure !== null}
+        onClose={() => setOpenFigure(null)}
+        title={openFigure?.captionExtracted ?? openFigure?.captionAi ?? 'Figure'}
+        description={openFigure?.pageNo ? `Page ${openFigure.pageNo}` : undefined}
+        width="max-w-3xl"
+      >
+        {openFigure && (
+          <img
+            src={openFigure.url}
+            alt={openFigure.altText ?? openFigure.captionExtracted ?? 'Extracted figure'}
+            className="max-h-[70vh] w-full rounded-lg bg-canvas object-contain"
+          />
+        )}
+      </Modal>
     </div>
   );
 }
