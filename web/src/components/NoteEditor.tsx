@@ -8,6 +8,8 @@ import Table from '@tiptap/extension-table';
 import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
 import TableRow from '@tiptap/extension-table-row';
+import { Fragment } from '@tiptap/pm/model';
+import { TextSelection } from '@tiptap/pm/state';
 import { BubbleMenu, EditorContent, useEditor, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -356,6 +358,47 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
     );
   }
 
+  /**
+   * Reorganising a page of notes — move this definition above that diagram —
+   * used to mean cutting and pasting text: the backend could already persist
+   * an explicit order (reorderBlocks, wired up here as an ordinary side
+   * effect of any edit), but nothing in the editor could produce one. This
+   * swaps the active block with its neighbour as a single transaction, so it
+   * is one undo step, not two.
+   */
+  const moveActiveBlock = (direction: 'up' | 'down') => {
+    if (!activeBlock) return;
+    const { doc } = editor.state;
+    let index = -1;
+    for (let i = 0; i < doc.childCount; i++) {
+      if (doc.child(i).attrs?.blockId === activeBlock.id) {
+        index = i;
+        break;
+      }
+    }
+    const j = direction === 'up' ? index - 1 : index;
+    if (index === -1 || j < 0 || j + 1 >= doc.childCount) return;
+
+    const nodeA = doc.child(j);
+    const nodeB = doc.child(j + 1);
+    let posA = 0;
+    for (let i = 0; i < j; i++) posA += doc.child(i).nodeSize;
+    const end = posA + nodeA.nodeSize + nodeB.nodeSize;
+
+    // A full-range replace doesn't carry the old selection with "its" node —
+    // ProseMirror maps the old numeric offset through the step, which after
+    // a reorder lands inside whichever node now occupies that offset, not
+    // the block that actually moved. So the new selection is placed
+    // explicitly, inside the block whose move this was.
+    const activeBlockNewStart = direction === 'up' ? posA : posA + nodeB.nodeSize;
+    const tr = editor.state.tr.replaceWith(posA, end, Fragment.fromArray([nodeB, nodeA]));
+    const resolved = tr.doc.resolve(Math.min(activeBlockNewStart + 1, tr.doc.content.size));
+    tr.setSelection(TextSelection.near(resolved));
+
+    editor.view.dispatch(tr.scrollIntoView());
+    editor.commands.focus();
+  };
+
   return (
     <div>
       <GenerateNotes sectionId={sectionId} />
@@ -469,15 +512,35 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
           )}
         </span>
 
-        <button
-          className="btn btn-sm"
-          onClick={toggleLock}
-          disabled={!activeBlock}
-          title="A locked block is never touched by regeneration"
-        >
-          <Icon name={activeBlock?.locked ? 'unlock' : 'lock'} size={12} />
-          {activeBlock?.locked ? 'Unlock' : 'Lock'} this block
-        </button>
+        <div className="flex gap-1.5">
+          <button
+            className="btn-icon"
+            onClick={() => moveActiveBlock('up')}
+            disabled={!activeBlock}
+            title="Move this block up"
+            aria-label="Move this block up"
+          >
+            <Icon name="chevronRight" size={13} className="-rotate-90" />
+          </button>
+          <button
+            className="btn-icon"
+            onClick={() => moveActiveBlock('down')}
+            disabled={!activeBlock}
+            title="Move this block down"
+            aria-label="Move this block down"
+          >
+            <Icon name="chevronRight" size={13} className="rotate-90" />
+          </button>
+          <button
+            className="btn btn-sm"
+            onClick={toggleLock}
+            disabled={!activeBlock}
+            title="A locked block is never touched by regeneration"
+          >
+            <Icon name={activeBlock?.locked ? 'unlock' : 'lock'} size={12} />
+            {activeBlock?.locked ? 'Unlock' : 'Lock'} this block
+          </button>
+        </div>
       </div>
 
       {/*
