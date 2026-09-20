@@ -282,6 +282,14 @@
   @apply opacity-70;
 }
 
+.prose-notes .ProseMirror-search-match {
+  @apply rounded-sm bg-warn-soft;
+}
+
+.prose-notes .ProseMirror-active-search-match {
+  @apply rounded-sm bg-accent-soft ring-1 ring-accent;
+}
+
 .prose-notes p.is-empty:first-child::before,
 .prose-notes h1.is-empty::before,
 .prose-notes h2.is-empty::before,
@@ -297,5 +305,44 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/*
+ * Export as PDF is the browser's own "Print" dialog pointed at a page with
+ * everything but the notes stripped out, not a bundled PDF renderer. That
+ * makes it free: every block type already has real CSS, so whatever prints
+ * matches what was written, tables and figures and highlights included,
+ * instead of a second rendering path this codebase would have to keep in
+ * step with the first one by hand.
+ */
+.print-only {
+  display: none;
+}
+
+@media print {
+  aside,
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block;
+  }
+  body {
+    background: white;
+  }
+  main {
+    overflow: visible !important;
+  }
+  .prose-notes h1,
+  .prose-notes h2,
+  .prose-notes h3 {
+    break-after: avoid;
+  }
+  .prose-notes table,
+  .prose-notes figure,
+  .prose-notes blockquote,
+  .prose-notes pre {
+    break-inside: avoid;
   }
 }

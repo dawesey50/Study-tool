@@ -1,6 +1,7 @@
 import Blockquote from '@tiptap/extension-blockquote';
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { search } from 'prosemirror-search';
 
 /**
  * Editor extensions that keep a free-form document and an addressable block
@@ -193,5 +194,20 @@ export const TrailingParagraph = Extension.create({
         },
       }),
     ];
+  },
+});
+
+/**
+ * Find & replace, from the official ProseMirror package rather than hand
+ * rolled — matching, wraparound, whole-word and replace-with-capture-groups
+ * are all easy to get subtly wrong, and this is exactly the part of a word
+ * processor where "subtly wrong" means confidently replacing the wrong text.
+ * This just wires its plugin in; FindReplaceBar in NoteEditor.tsx drives it.
+ */
+export const SearchHighlight = Extension.create({
+  name: 'searchHighlight',
+
+  addProseMirrorPlugins() {
+    return [search()];
   },
 });

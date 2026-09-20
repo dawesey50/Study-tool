@@ -57,39 +57,59 @@ export function SectionPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-8 py-10">
-      <SectionHeader sectionId={sectionId} number={section.number} title={section.title} />
+      <div className="no-print">
+        <SectionHeader sectionId={sectionId} number={section.number} title={section.title} />
 
-      {section.learningOutcomes?.length ? (
-        <ul className="card mt-4 space-y-1.5 px-4 py-3 text-sm">
-          {section.learningOutcomes.map((outcome) => (
-            <li key={outcome} className="flex gap-2.5">
-              <Icon name="check" size={14} className="mt-1 text-accent" />
-              <span className="leading-relaxed">{outcome}</span>
-            </li>
+        {section.learningOutcomes?.length ? (
+          <ul className="card mt-4 space-y-1.5 px-4 py-3 text-sm">
+            {section.learningOutcomes.map((outcome) => (
+              <li key={outcome} className="flex gap-2.5">
+                <Icon name="check" size={14} className="mt-1 text-accent" />
+                <span className="leading-relaxed">{outcome}</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
+        <div className="mt-7 flex items-center gap-0.5 border-b border-line">
+          {TABS.map((entry) => (
+            <button
+              key={entry.id}
+              onClick={() => setTab(entry.id)}
+              aria-current={tab === entry.id ? 'page' : undefined}
+              className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition ${
+                tab === entry.id
+                  ? 'border-accent font-medium text-accent'
+                  : 'border-transparent text-muted hover:border-line hover:text-ink'
+              }`}
+            >
+              <Icon name={entry.icon} size={14} />
+              {entry.label}
+              {entry.id === 'sources' && sectionSources?.length ? (
+                <span className="chip bg-line/60 text-muted">{sectionSources.length}</span>
+              ) : null}
+            </button>
           ))}
-        </ul>
-      ) : null}
 
-      <div className="mt-7 flex gap-0.5 border-b border-line">
-        {TABS.map((entry) => (
-          <button
-            key={entry.id}
-            onClick={() => setTab(entry.id)}
-            aria-current={tab === entry.id ? 'page' : undefined}
-            className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition ${
-              tab === entry.id
-                ? 'border-accent font-medium text-accent'
-                : 'border-transparent text-muted hover:border-line hover:text-ink'
-            }`}
-          >
-            <Icon name={entry.icon} size={14} />
-            {entry.label}
-            {entry.id === 'sources' && sectionSources?.length ? (
-              <span className="chip bg-line/60 text-muted">{sectionSources.length}</span>
-            ) : null}
-          </button>
-        ))}
+          {tab === 'notes' && (
+            <button
+              className="btn btn-sm ml-auto mb-1"
+              onClick={() => window.print()}
+              title="Opens your browser's print dialog — choose 'Save as PDF' as the destination"
+            >
+              <Icon name="file" size={13} />
+              Export as PDF
+            </button>
+          )}
+        </div>
       </div>
+
+      {tab === 'notes' && (
+        <div className="print-only mb-6">
+          <p className="text-xs uppercase tracking-wider text-faint">Section {section.number}</p>
+          <h1 className="mt-1 text-2xl font-bold">{section.title}</h1>
+        </div>
+      )}
 
       <div className="py-7">
         {tab === 'notes' && <NoteEditor sectionId={sectionId} />}

@@ -10,6 +10,7 @@ import TableHeader from '@tiptap/extension-table-header';
 import TableRow from '@tiptap/extension-table-row';
 import { Fragment } from '@tiptap/pm/model';
 import { TextSelection } from '@tiptap/pm/state';
+import { findNext, findPrev, replaceAll, replaceNext, setSearchState, SearchQuery } from 'prosemirror-search';
 import { BubbleMenu, EditorContent, useEditor, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -25,6 +26,7 @@ import {
 import {
   BlockId,
   createLockGuard,
+  SearchHighlight,
   TrailingParagraph,
   VariantBlockquote,
 } from './editor/extensions';
@@ -59,6 +61,7 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
 
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [picker, setPicker] = useState<'figure' | 'crossref' | null>(null);
+  const [findOpen, setFindOpen] = useState(false);
   const [, forceRender] = useState(0);
 
   /** Last known server state, used to work out what actually changed. */
@@ -133,6 +136,7 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
         Superscript,
         BlockId,
         TrailingParagraph,
+        SearchHighlight,
         lockGuard,
         Placeholder.configure({
           placeholder: ({ node }) =>
@@ -171,6 +175,20 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
     [sectionId],
   );
   editorRef.current = editor ?? null;
+
+  /** Ctrl/Cmd+F opens find & replace instead of the browser's own page search — only while this editor has focus, so it stays out of the way everywhere else. */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f') {
+        if (!editorRef.current?.isFocused) return;
+        event.preventDefault();
+        setFindOpen(true);
+      }
+      if (event.key === 'Escape' && findOpen) setFindOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [findOpen]);
 
   /**
    * Load this section's blocks into the document exactly once.
@@ -431,15 +449,23 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
     editor.commands.focus();
   };
 
+  const noteText = editor.getText();
+  const wordCount = noteText.trim() ? noteText.trim().split(/\s+/).length : 0;
+  const charCount = noteText.length;
+
   return (
     <div>
-      <GenerateNotes sectionId={sectionId} />
-      <Toolbar
-        editor={editor}
-        status={status}
-        onInsertFigure={() => setPicker('figure')}
-        onInsertCrossref={() => setPicker('crossref')}
-      />
+      <div className="no-print">
+        <GenerateNotes sectionId={sectionId} />
+        <Toolbar
+          editor={editor}
+          status={status}
+          onInsertFigure={() => setPicker('figure')}
+          onInsertCrossref={() => setPicker('crossref')}
+          onOpenFind={() => setFindOpen(true)}
+        />
+        <FindReplaceBar editor={editor} open={findOpen} onClose={() => setFindOpen(false)} />
+      </div>
 
       <BubbleMenu
         editor={editor}
@@ -527,7 +553,11 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
         />
       )}
 
-      <div className="mt-6 flex items-center justify-between border-t border-line pt-3 text-2xs text-muted">
+      <div className="no-print flex items-center justify-between pt-2 text-2xs text-faint">
+        <span>{wordCount} {wordCount === 1 ? 'word' : 'words'} · {charCount} characters</span>
+      </div>
+
+      <div className="mt-2 flex items-center justify-between border-t border-line pt-3 text-2xs text-muted no-print">
         <span>
           {activeBlock ? (
             <>
@@ -581,7 +611,7 @@ export function NoteEditor({ sectionId }: { sectionId: string }) {
         thing that makes a note fixable without regenerating around it.
       */}
       {activeBlock && (
-        <div className="mt-3 rounded-lg border border-line bg-panel p-3">
+        <div className="no-print mt-3 rounded-lg border border-line bg-panel p-3">
           <BlockActions
             block={activeBlock}
             onAccept={(markdown) => replaceActiveBlock(activeBlock.id, markdown)}
@@ -624,11 +654,13 @@ function Toolbar({
   status,
   onInsertFigure,
   onInsertCrossref,
+  onOpenFind,
 }: {
   editor: Editor;
   status: string;
   onInsertFigure: () => void;
   onInsertCrossref: () => void;
+  onOpenFind: () => void;
 }) {
   const blockLabel = editor.isActive('heading', { level: 1 })
     ? 'Heading 1'
@@ -797,9 +829,125 @@ function Toolbar({
         disabled={!editor.can().redo()}
       />
 
+      <Divider />
+      <IconTool icon="search" onClick={onOpenFind} label="Find & replace (Ctrl/⌘ F)" />
+
       <span className="ml-auto pr-1 text-2xs text-faint" aria-live="polite">
         {status === 'saving' ? 'Saving…' : status === 'saved' ? 'Saved' : status === 'error' ? 'Not saved' : ''}
       </span>
+    </div>
+  );
+}
+
+/**
+ * Find & replace across the whole document, not just what happens to be
+ * on screen — the gap between "revising a page of notes" and "revising a
+ * page of notes that fits in one viewport".
+ */
+function FindReplaceBar({
+  editor,
+  open,
+  onClose,
+}: {
+  editor: Editor;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [replacement, setReplacement] = useState('');
+  const [caseSensitive, setCaseSensitive] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const currentQuery = useMemo(
+    () => new SearchQuery({ search: query, replace: replacement, caseSensitive }),
+    [query, replacement, caseSensitive],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    editor.view.dispatch(setSearchState(editor.state.tr, currentQuery));
+    inputRef.current?.focus();
+    // Deliberately omitted from deps: re-running this whole effect (and
+    // re-focusing) on every keystroke would steal focus from the inputs
+    // themselves. The dedicated effect below keeps the live query current.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    editor.view.dispatch(setSearchState(editor.state.tr, currentQuery));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentQuery]);
+
+  useEffect(() => {
+    if (open) return;
+    editor.view.dispatch(setSearchState(editor.state.tr, new SearchQuery({ search: '' })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  if (!open) return null;
+
+  const go = (direction: 'next' | 'prev') => {
+    const command = direction === 'next' ? findNext : findPrev;
+    command(editor.state, editor.view.dispatch, editor.view);
+    editor.view.focus();
+  };
+
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1.5 rounded-lg border border-line bg-panel px-2 py-1.5 text-xs">
+      <input
+        ref={inputRef}
+        className="input h-7 w-40 text-xs"
+        placeholder="Find"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') go(event.shiftKey ? 'prev' : 'next');
+          if (event.key === 'Escape') onClose();
+        }}
+      />
+      <input
+        className="input h-7 w-40 text-xs"
+        placeholder="Replace with"
+        value={replacement}
+        onChange={(event) => setReplacement(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') onClose();
+        }}
+      />
+      <IconTool icon="chevronLeft" onClick={() => go('prev')} label="Previous match" disabled={!query} />
+      <IconTool icon="chevronRight" onClick={() => go('next')} label="Next match" disabled={!query} />
+      <button
+        className="btn btn-sm"
+        disabled={!query}
+        onClick={() => {
+          replaceNext(editor.state, editor.view.dispatch, editor.view);
+          editor.view.focus();
+        }}
+      >
+        Replace
+      </button>
+      <button
+        className="btn btn-sm"
+        disabled={!query}
+        onClick={() => {
+          replaceAll(editor.state, editor.view.dispatch, editor.view);
+          editor.view.focus();
+        }}
+      >
+        Replace all
+      </button>
+      <label className="flex items-center gap-1 text-2xs text-muted">
+        <input
+          type="checkbox"
+          checked={caseSensitive}
+          onChange={(event) => setCaseSensitive(event.target.checked)}
+        />
+        Case-sensitive
+      </label>
+      <button className="btn-icon ml-auto" onClick={onClose} aria-label="Close find and replace">
+        <Icon name="close" size={14} />
+      </button>
     </div>
   );
 }
